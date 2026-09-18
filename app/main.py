@@ -423,3 +423,38 @@ async def get_templates():
     ]
 
     return JSONResponse(content={"count": len(templates), "templates": [t.model_dump() for t in templates]})
+
+
+# ---------------------------------------------------------------------------
+# PDF Report
+# ---------------------------------------------------------------------------
+
+@app.post("/report")
+async def generate_pdf_report(request: Request):
+    """Generate a comprehensive PDF report from optimisation results."""
+    from fastapi.responses import Response
+
+    from .pdf_report import generate_report
+
+    body = await request.json()
+    response = body.get("response", {})
+    baseline = body.get("baseline")
+    whatif = body.get("whatif")
+    compare = body.get("compare")
+    carbon = body.get("carbon")
+    demo_results = body.get("demo_results")
+
+    try:
+        pdf_bytes = generate_report(
+            response=response, baseline=baseline, whatif=whatif,
+            compare=compare, carbon=carbon, demo_results=demo_results,
+        )
+        scenario_id = response.get("scenario_id", "report")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="gridwise-{scenario_id}.pdf"'},
+        )
+    except Exception as exc:
+        logger.error("PDF generation failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc

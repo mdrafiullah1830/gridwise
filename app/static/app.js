@@ -522,6 +522,20 @@ function toggleTheme() {
 
 /* ── Export ───────────────────────────────────────────── */
 function exportJSON(){if(!currentResponse){toast('No results','error');return;}const b=new Blob([JSON.stringify(currentResponse,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`gridwise-${currentResponse.scenario_id||'result'}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);toast('Exported JSON','success');}
+
+async function downloadPDF(){
+    if(!currentResponse){toast('Run an optimisation first','error');return;}
+    showLoading('Generating PDF report...');
+    try{
+        const res=await fetch('/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({response:currentResponse})});
+        if(!res.ok){const e=await res.json();toast(e.detail||'PDF failed','error');hideLoading();return;}
+        const blob=await res.blob();
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download=`gridwise-${currentResponse.scenario_id||'report'}.pdf`;
+        document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+        hideLoading();toast('PDF downloaded','success');
+    }catch(err){hideLoading();toast(`PDF failed: ${err.message}`,'error');}
+}
 function exportCSV(){if(!currentResponse){toast('No schedule','error');return;}const cap=parseFloat(document.getElementById('batteryCapacity').value)||220;const header='Hour,Grid_kWh,SolarUsed_kWh,Action,Batt_kWh,SOC%,Cost_BDT\n';const rows=currentResponse.hourly_plan.map(h=>{const soc=(h.battery_energy_after_kwh/cap)*100;return [h.hour,h.grid_kwh.toFixed(1),h.solar_used_kwh.toFixed(1),h.battery_action,h.battery_kwh.toFixed(1),soc.toFixed(0),(h.grid_kwh*3.2).toFixed(2)].join(',')}).join('\n');const b=new Blob([header+rows],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`gridwise-schedule.csv`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);toast('Exported CSV','success');}
 function copyJSON(){if(!currentResponse)return;navigator.clipboard.writeText(JSON.stringify(currentResponse,null,2)).then(()=>toast('Copied','success'));}
 function copyDirectives(){if(!currentResponse)return;const text=currentResponse.directive_interpretation.map(d=>`${d.directive_type}: ${d.explanation||''}`).join('\n');navigator.clipboard.writeText(text).then(()=>toast('Copied','success'));}
