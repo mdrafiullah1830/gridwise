@@ -25,8 +25,8 @@ class Settings:
     """Immutable application settings."""
 
     # Server
-    host: str = field(default_factory=lambda: os.getenv("GRIDWISE_HOST", "0.0.0.0"))
-    port: int = field(default_factory=lambda: int(os.getenv("GRIDWISE_PORT", "8000")))
+    host: str = field(default_factory=lambda: os.getenv("GRIDWISE_HOST") or "0.0.0.0")
+    port: int = field(default_factory=lambda: int(os.getenv("GRIDWISE_PORT") or "8000"))
 
     # CORS — comma-separated allowlist. Use "*" for fully permissive (dev only).
     cors_allow_origins: list[str] = field(
@@ -59,18 +59,18 @@ class Settings:
         default_factory=lambda: os.getenv("LLM_MODEL", "gpt-4o-mini")
     )
     llm_temperature: float = field(
-        default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.0"))
+        default_factory=lambda: float(os.getenv("LLM_TEMPERATURE") or "0.0")
     )
     llm_max_tokens: int = field(
-        default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS", "2048"))
+        default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS") or "2048")
     )
     llm_timeout: int = field(
-        default_factory=lambda: int(os.getenv("LLM_TIMEOUT", "30"))
+        default_factory=lambda: int(os.getenv("LLM_TIMEOUT") or "30")
     )
 
     # Optimizer
     optimizer_timeout: int = field(
-        default_factory=lambda: int(os.getenv("OPTIMIZER_TIMEOUT", "30"))
+        default_factory=lambda: int(os.getenv("OPTIMIZER_TIMEOUT") or "30")
     )
 
     # Numeric tolerance for comparisons

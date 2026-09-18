@@ -3,7 +3,8 @@
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": { "maxDuration": 30 }
     },
     {
       "src": "public/**",
@@ -52,6 +53,10 @@
       "dest": "/api/index.py"
     },
     {
+      "src": "/history/trend",
+      "dest": "/api/index.py"
+    },
+    {
       "src": "/history",
       "dest": "/api/index.py"
     },
@@ -75,15 +80,5 @@
       "src": "/",
       "dest": "/public/index.html"
     }
-  ],
-  "env": {
-    "LLM_API_KEY": "@llm-api-key",
-    "LLM_BASE_URL": "https://api.groq.com/openai/v1",
-    "LLM_MODEL": "qwen/qwen3.8b"
-  },
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
