@@ -1,0 +1,12 @@
+tests/
+data/
+.puku/
+__pycache__/
+*.pyc
+.env
+.env.*
+.git/
+.vercel/
+docker-compose.yml
+Dockerfile
+.dockerignore

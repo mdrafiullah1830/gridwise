@@ -1,0 +1,89 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/static/(.*)",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/scenarios",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/templates",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/optimize-energy",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/optimize-energy/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/compare",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/what-if",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/optimize-carbon",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/history",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/history/(.*)",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/carbon/stats",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/report",
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/(.*\\.(html|js|css|png|jpg|svg|ico|json))",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/public/index.html"
+    }
+  ],
+  "env": {
+    "LLM_API_KEY": "@llm-api-key",
+    "LLM_BASE_URL": "https://api.groq.com/openai/v1",
+    "LLM_MODEL": "qwen/qwen3.8b"
+  },
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30
+    }
+  }
+}

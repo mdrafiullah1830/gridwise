@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridWise — Smart Campus Energy Optimisation</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="ambient-bg"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+    <div id="toastContainer" class="toast-container"></div>
+
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <div class="logo-icon"><svg viewBox="0 0 32 32" fill="none"><rect x="2" y="2" width="28" height="28" rx="6" stroke="url(#grad)" stroke-width="2"/><path d="M10 22V14l6-4 6 4v8" stroke="url(#grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="17" r="2" fill="url(#grad)"/><defs><linearGradient id="grad" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs></svg></div>
+                <div><h1>GridWise</h1><span class="tagline">Smart Campus Energy Optimisation</span></div>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" onclick="switchTab('optimise')">Optimise</button>
+                <button class="nav-tab" onclick="switchTab('compare')">Compare</button>
+                <button class="nav-tab" onclick="switchTab('whatif')">What-If</button>
+                <button class="nav-tab" onclick="switchTab('carbon')">Carbon</button>
+                <button class="nav-tab" onclick="switchTab('history')">History</button>
+                <button class="nav-tab" onclick="switchTab('demo')">Live Demo</button>
+            </nav>
+            <div class="header-actions">
+                <div class="status-badge" id="statusBadge"><span class="status-dot"></span><span>Checking...</span></div>
+                <button class="btn btn-ghost" onclick="downloadPDF()" title="Download PDF Report"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> PDF</button>
+                <button class="btn btn-ghost" onclick="showShortcuts()" title="Shortcuts (?)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg></button>
+                <button class="btn btn-ghost" onclick="toggleTheme()" title="Theme (T)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/></svg></button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- ===== TAB: OPTIMISE ===== -->
+        <div class="tab-content active" id="tab-optimise">
+            <section class="card input-section">
+                <div class="card-header">
+                    <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Scenario Input</h2>
+                    <div class="card-actions">
+                        <select id="sampleSelect" class="select"><option value="">Load sample case...</option></select>
+                        <select id="templateSelect" class="select" onchange="loadTemplate()"><option value="">Load template...</option></select>
+                        <button class="btn btn-secondary btn-sm" onclick="randomScenario()">Random</button>
+                    </div>
+                </div>
+                <div class="input-grid">
+                    <div class="input-group full-width">
+                        <label>Operator Notes <span class="hint">(1-3 natural language instructions)</span></label>
+                        <div id="notesContainer">
+                            <div class="note-row"><span class="note-index">0</span><input type="text" class="input" placeholder="e.g. Solar panels will be washed from noon until 2 PM..." data-note="0"><button class="btn btn-icon btn-danger" onclick="removeNote(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="addNote()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Note</button>
+                    </div>
+                    <div class="input-group"><label>Scenario ID</label><input type="text" class="input" id="scenarioId" value="SCENARIO-001"></div>
+                    <div class="input-group"><label>Battery Capacity (kWh)</label><input type="number" class="input" id="batteryCapacity" value="220" min="1"></div>
+                    <div class="input-group"><label>Initial Energy (kWh)</label><input type="number" class="input" id="batteryInitial" value="110" min="0"></div>
+                    <div class="input-group"><label>Min Reserve (kWh)</label><input type="number" class="input" id="batteryMin" value="40" min="0"></div>
+                    <div class="input-group"><label>Max Charge (kWh/h)</label><input type="number" class="input" id="batteryChargeRate" value="50" min="1"></div>
+                    <div class="input-group"><label>Max Discharge (kWh/h)</label><input type="number" class="input" id="batteryDischargeRate" value="50" min="1"></div>
+                    <div class="input-group full-width">
+                        <div class="table-header"><label>Hourly Data</label><div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="randomiseHourlyData()">Randomise</button><button class="btn btn-ghost btn-sm" onclick="clearHourlyData()">Clear</button></div></div>
+                        <div class="table-wrapper scrollable"><table class="data-table"><thead><tr><th>Hr</th><th>Demand (kWh)</th><th>Solar (kWh)</th><th>Tariff (BDT)</th></tr></thead><tbody id="hourlyBody"></tbody></table></div>
+                    </div>
+                    <!-- Tariff Tiers Config (v4.0) -->
+                    <div class="input-group full-width">
+                        <label class="toggle-label"><input type="checkbox" id="tariffEnabled" class="toggle-input"> Time-of-Use Tariff Tiers</label>
+                        <div class="tier-config" id="tariffConfig" style="display:none;">
+                            <div class="input-grid compact">
+                                <div class="input-group"><label>Peak Hours</label><input type="text" class="input" id="tariffPeakHours" value="18-22" placeholder="e.g. 18-22"></div>
+                                <div class="input-group"><label>Peak Multiplier</label><input type="number" class="input" id="tariffPeakMult" value="2.0" step="0.1" min="0.1"></div>
+                                <div class="input-group"><label>Shoulder Hours</label><input type="text" class="input" id="tariffShoulderHours" value="8-17" placeholder="e.g. 8-17"></div>
+                                <div class="input-group"><label>Shoulder Multiplier</label><input type="number" class="input" id="tariffShoulderMult" value="1.0" step="0.1" min="0.1"></div>
+                                <div class="input-group"><label>Off-Peak Hours</label><input type="text" class="input" id="tariffOffPeakHours" value="0-6,23" placeholder="e.g. 0-6,23"></div>
+                                <div class="input-group"><label>Off-Peak Multiplier</label><input type="number" class="input" id="tariffOffPeakMult" value="0.5" step="0.1" min="0.1"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Battery Degradation Config (v4.0) -->
+                    <div class="input-group full-width">
+                        <label class="toggle-label"><input type="checkbox" id="degradationEnabled" class="toggle-input"> Battery Degradation Model</label>
+                        <div class="tier-config" id="degradationConfig" style="display:none;">
+                            <div class="input-grid compact">
+                                <div class="input-group"><label>Cost per Cycle (BDT)</label><input type="number" class="input" id="degradationCost" value="0.5" step="0.1" min="0"></div>
+                                <div class="input-group"><label>Max Cycles</label><input type="number" class="input" id="degradationMaxCycles" value="3000" min="100"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary btn-lg" id="optimizeBtn" onclick="runOptimizationWS()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span id="optimizeBtnText">Optimise Schedule</span></button>
+                    <button class="btn btn-secondary" onclick="runBaseline()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Baseline Comparison</button>
+                    <span class="footer-hint">LLM interprets notes → Guardrails validate → MILP optimises · <kbd>Ctrl+Enter</kbd></span>
+                </div>
+            </section>
+            <section class="results-section" id="resultsSection" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: COMPARE ===== -->
+        <div class="tab-content" id="tab-compare">
+            <section class="card">
+                <div class="card-header"><h2>Scenario Comparison</h2><span class="hint">Load 2-5 scenarios, run optimiser, compare results side-by-side</span></div>
+                <div id="compareScenarios"></div>
+                <div class="card-footer">
+                    <button class="btn btn-secondary btn-sm" onclick="addCompareSlot()">+ Add Scenario</button>
+                    <button class="btn btn-primary" onclick="runCompare()">Compare All</button>
+                </div>
+            </section>
+            <section class="compare-results" id="compareResults" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: WHAT-IF ===== -->
+        <div class="tab-content" id="tab-whatif">
+            <section class="card">
+                <div class="card-header"><h2>What-If Analysis</h2><span class="hint">Tweak one parameter across a range, see cost impact instantly</span></div>
+                <div class="input-grid">
+                    <div class="input-group"><label>Parameter</label><select id="whatIfParam" class="select"><option value="capacity_kwh">Battery Capacity (kWh)</option><option value="initial_energy_kwh">Initial Energy (kWh)</option><option value="minimum_energy_kwh">Min Reserve (kWh)</option><option value="max_charge_kwh_per_hour">Max Charge Rate</option><option value="max_discharge_kwh_per_hour">Max Discharge Rate</option></select></div>
+                    <div class="input-group"><label>From</label><input type="number" class="input" id="whatIfFrom" value="50"></div>
+                    <div class="input-group"><label>To</label><input type="number" class="input" id="whatIfTo" value="300"></div>
+                    <div class="input-group"><label>Steps</label><input type="number" class="input" id="whatIfSteps" value="6" min="2" max="10"></div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary" onclick="runWhatIf()">Run What-If Analysis</button>
+                </div>
+            </section>
+            <section class="whatif-results" id="whatIfResults" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: CARBON ===== -->
+        <div class="tab-content" id="tab-carbon">
+            <section class="card">
+                <div class="card-header"><h2>Carbon-Aware Optimisation</h2><span class="hint">Multi-objective: minimise weighted cost + carbon emissions</span></div>
+                <div class="input-grid">
+                    <div class="input-group"><label>Carbon Factor (kg CO₂/kWh)</label><input type="number" class="input" id="carbonFactor" value="0.5" step="0.1" min="0"></div>
+                    <div class="input-group"><label>Cost Weight</label><input type="number" class="input" id="costWeight" value="0.7" step="0.1" min="0" max="1"></div>
+                    <div class="input-group"><label>Carbon Weight</label><input type="number" class="input" id="carbonWeight" value="0.3" step="0.1" min="0" max="1"></div>
+                </div>
+                <div class="card-footer"><button class="btn btn-primary" onclick="runCarbon()">Run Carbon Optimisation</button></div>
+            </section>
+            <section id="carbonStatsSection"></section>
+            <section class="carbon-results" id="carbonResults" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: HISTORY ===== -->
+        <div class="tab-content" id="tab-history">
+            <section class="card">
+                <div class="card-header"><h2>Run History</h2><button class="btn btn-ghost btn-sm" onclick="loadHistory()">Refresh</button></div>
+                <div id="historyList" class="history-list"><p class="hint">No runs yet. Run an optimisation to see history here.</p></div>
+            </section>
+            <section id="costTrendSection"></section>
+        </div>
+
+        <!-- ===== TAB: DEMO ===== -->
+        <div class="tab-content" id="tab-demo">
+            <section class="card">
+                <div class="card-header"><h2>Live Demo — Auto-Run All Samples</h2><span class="hint">Runs all 10 sample cases sequentially with results</span></div>
+                <div class="demo-controls">
+                    <button class="btn btn-primary btn-lg" id="demoBtn" onclick="runDemo()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start Demo</button>
+                    <div class="demo-progress" id="demoProgress" style="display:none;"><div class="demo-bar" id="demoBar"></div><span id="demoStatus">Running...</span></div>
+                </div>
+                <div id="demoResults" class="demo-results"></div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display:none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p class="loading-text" id="loadingText">Processing...</p>
+            <p class="loading-subtext" id="loadingSubtext">Validating directives & optimising schedule</p>
+            <div class="loading-progress"><div class="loading-bar" id="loadingBar"></div></div>
+        </div>
+    </div>
+
+    <!-- Shortcuts Modal -->
+    <div class="modal-overlay" id="shortcutsModal" style="display:none;" onclick="if(event.target===this)closeShortcuts()">
+        <div class="modal">
+            <div class="modal-header"><h2>Keyboard Shortcuts</h2><button class="btn btn-icon" onclick="closeShortcuts()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+            <div class="shortcuts-grid">
+                <div class="shortcut"><kbd>Ctrl</kbd><kbd>Enter</kbd><span>Run Optimisation</span></div>
+                <div class="shortcut"><kbd>T</kbd><span>Toggle Theme</span></div>
+                <div class="shortcut"><kbd>E</kbd><span>Export JSON</span></div>
+                <div class="shortcut"><kbd>R</kbd><span>Random Scenario</span></div>
+                <div class="shortcut"><kbd>1</kbd>–<kbd>6</kbd><span>Switch Tab</span></div>
+                <div class="shortcut"><kbd>Esc</kbd><span>Close Modal</span></div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer"><p>GridWise v3.0 — BUP CSE Fest 2026 Hackathon · <kbd>?</kbd> for shortcuts</p></footer>
+    <script src="/static/app.js"></script>
+</body>
+</html>

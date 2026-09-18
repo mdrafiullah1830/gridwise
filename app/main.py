@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -39,6 +40,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(nam
 logger = logging.getLogger("gridwise")
 
 STATIC_DIR = Path(__file__).parent / "static"
+PUBLIC_DIR = Path(__file__).parent.parent / "public"
 
 
 @asynccontextmanager
@@ -46,7 +48,9 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if not settings.llm_api_key:
         logger.warning("LLM_API_KEY is not set — LLM calls will fail at runtime")
-    logger.info("GridWise starting — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
+    logger.info("GridWise starting — model=%s, base_url=%s, vercel=%s",
+                settings.llm_model, settings.llm_base_url,
+                os.environ.get("VERCEL", "0") == "1")
     yield
     logger.info("GridWise shutting down")
 
@@ -69,9 +73,17 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Also mount public/ for Vercel deployment
+if PUBLIC_DIR.exists():
+    app.mount("/public", StaticFiles(directory=str(PUBLIC_DIR)), name="public")
+
 
 @app.get("/", include_in_schema=False)
 async def dashboard() -> FileResponse:
+    # Serve from public/ if available (Vercel), otherwise from app/static/
+    public_index = PUBLIC_DIR / "index.html"
+    if public_index.exists():
+        return FileResponse(str(public_index))
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 
