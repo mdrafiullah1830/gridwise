@@ -4,11 +4,13 @@ Endpoints
 ---------
 GET  /                  — Dashboard UI
 GET  /health            — readiness probe
+GET  /scenarios         — list available sample scenarios
 POST /optimize-energy   — interpret operator notes + optimise 24-hour schedule
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -32,41 +34,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
+SAMPLES_FILE = Path("/Users/mdrafiullah/Downloads/BUP_CSE_FEST_2026_Participant_Docs/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json")
 
-
-# ---------------------------------------------------------------------------
-# Lifespan
-# ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup / shutdown hooks."""
     settings = get_settings()
     if not settings.llm_api_key:
-        logger.warning(
-            "LLM_API_KEY is not set — LLM calls will fail at runtime"
-        )
-    logger.info(
-        "GridWise starting — model=%s, base_url=%s",
-        settings.llm_model,
-        settings.llm_base_url,
-    )
+        logger.warning("LLM_API_KEY is not set — LLM calls will fail at runtime")
+    logger.info("GridWise starting — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
     yield
     logger.info("GridWise shutting down")
 
 
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
-
 app = FastAPI(
     title="GridWise",
     description="Smart Campus Energy Optimisation — LLM-Assisted Operator Directive Interpretation",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# CORS — allow all origins for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -75,51 +62,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ---------------------------------------------------------------------------
-# Dashboard
-# ---------------------------------------------------------------------------
-
 @app.get("/", include_in_schema=False)
 async def dashboard() -> FileResponse:
-    """Serve the main dashboard UI."""
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 
-# ---------------------------------------------------------------------------
-# Health endpoint
-# ---------------------------------------------------------------------------
-
 @app.get("/health")
 async def health() -> JSONResponse:
-    """Readiness probe — must return {"status": "ok"}."""
     return JSONResponse(content={"status": "ok"})
 
 
-# ---------------------------------------------------------------------------
-# Optimise endpoint
-# ---------------------------------------------------------------------------
+@app.get("/scenarios")
+async def scenarios() -> JSONResponse:
+    """Return the 10 public sample cases for the dashboard."""
+    try:
+        raw = SAMPLES_FILE.read_text()
+        data = json.loads(raw)
+        cases = data.get("cases", [])
+        samples = []
+        for case in cases:
+            inp = case.get("input", {})
+            samples.append({
+                "id": inp.get("scenario_id", case.get("id", "UNKNOWN")),
+                "notes": inp.get("operator_notes", []),
+                "hours": inp.get("hours", []),
+                "battery": inp.get("battery", {}),
+            })
+        return JSONResponse(content={"count": len(samples), "samples": samples})
+    except (OSError, json.JSONDecodeError, AttributeError) as exc:
+        logger.error("Failed to load samples: %s", exc)
+        return JSONResponse(content={"count": 0, "samples": [], "error": str(exc)}, status_code=500)
+
 
 @app.post("/optimize-energy")
 async def optimize_energy(request: OptimizeRequest) -> OptimizeResponse:
-    """Interpret operator notes and produce an optimal 24-hour energy schedule.
-
-    Pipeline:
-    1. LLM interprets natural-language operator notes → structured directives
-    2. Deterministic guardrails validate / correct LLM output
-    3. MILP optimizer produces the minimum-cost 24-hour schedule
-    """
+    """Interpret operator notes and produce an optimal 24-hour energy schedule."""
     t0 = time.monotonic()
 
-    # Step 1 — LLM interpretation
     try:
         raw_directives = await interpret_notes(request.operator_notes)
-    except Exception as exc:  # noqa: BLE001 — intentional graceful degradation
+    except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
         logger.error("LLM call failed: %s", exc)
-        # Graceful degradation: treat all notes as no_op
         raw_directives = [
             {
                 "note_index": i,
@@ -131,10 +117,8 @@ async def optimize_energy(request: OptimizeRequest) -> OptimizeResponse:
             for i in range(len(request.operator_notes))
         ]
 
-    # Convert to typed models
     directives = to_directive_interpretations(raw_directives)
 
-    # Step 2 — Guardrails
     try:
         directives = validate_directives(
             directives, request.hours, len(request.operator_notes)
@@ -146,7 +130,6 @@ async def optimize_energy(request: OptimizeRequest) -> OptimizeResponse:
             detail=f"Directive interpretation failed guardrails: {exc}",
         ) from exc
 
-    # Step 3 — Optimise
     try:
         response = optimize(
             hours=request.hours,
