@@ -2,8 +2,9 @@
 
 Endpoints
 ---------
-GET  /health          — readiness probe
-POST /optimize-energy — interpret operator notes + optimise 24-hour schedule
+GET  /                  — Dashboard UI
+GET  /health            — readiness probe
+POST /optimize-energy   — interpret operator notes + optimise 24-hour schedule
 """
 
 from __future__ import annotations
@@ -11,9 +12,12 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .guardrails import GuardrailError, validate_directives
@@ -26,6 +30,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +65,28 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# CORS — allow all origins for development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static files
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+@app.get("/", include_in_schema=False)
+async def dashboard() -> FileResponse:
+    """Serve the main dashboard UI."""
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 
 # ---------------------------------------------------------------------------
