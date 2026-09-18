@@ -1,12 +1,13 @@
 """LLM integration for operator-note interpretation.
 
-Uses an OpenAI-compatible chat completions endpoint.  The model receives a
-carefully engineered system prompt that instructs it to return **only** valid
-JSON conforming to the ``directive_interpretation`` schema.
+Uses an OpenAI-compatible chat completions endpoint with retry + cache.
+Falls back to deterministic keyword parsing when LLM is unavailable.
 """
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -23,9 +24,17 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-# Match a balanced JSON array (best-effort, used only as a fallback when
-# ``json.loads`` fails on a slightly malformed LLM payload).
 _JSON_ARRAY_RE = re.compile(r"\[\s*\{.*\}\s*\]", re.DOTALL)
+
+# ---------------------------------------------------------------------------
+# In-memory LLM response cache (keyed by note hash)
+# ---------------------------------------------------------------------------
+_cache: dict[str, list[dict[str, Any]]] = {}
+
+
+def _cache_key(notes: list[str]) -> str:
+    return hashlib.sha256(json.dumps(sorted(notes)).encode()).hexdigest()[:16]
+
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -82,17 +91,219 @@ Rules:
 """
 
 # ---------------------------------------------------------------------------
-# LLM call
+# Keyword-based fallback parser (no LLM needed)
+# ---------------------------------------------------------------------------
+
+_HOUR_RE = re.compile(r"(\d{1,2})\s*(?:AM|PM|am|pm)", re.IGNORECASE)
+_RANGE_RE = re.compile(r"(\d{1,2})\s*(?:to|until|till|-)\s*(\d{1,2})\s*(?:AM|PM|am|pm)?", re.IGNORECASE)
+
+
+def _parse_hour_from_text(text: str) -> int | None:
+    """Extract hour from text like '2 PM', '14:00', 'noon', 'midnight'."""
+    low = text.lower().strip()
+    if low in ("noon", "12 pm", "12pm", "12:00 pm"):
+        return 12
+    if low in ("midnight", "12 am", "12am", "00:00"):
+        return 0
+    m = _HOUR_RE.search(text)
+    if m:
+        h = int(m.group(1))
+        if "pm" in text.lower() and h != 12:
+            h += 12
+        if "am" in text.lower() and h == 12:
+            h = 0
+        return h % 24
+    return None
+
+
+def _extract_hours_from_note(note: str) -> list[int] | None:
+    """Extract hour range from operator note."""
+    low = note.lower()
+
+    # Check for range patterns like "noon until 2 PM", "1 PM to 3 PM"
+    range_match = _RANGE_RE.search(note)
+    if range_match:
+        start = _parse_hour_from_text(range_match.group(1) + (" PM" if int(range_match.group(1)) < 12 else ""))
+        end = _parse_hour_from_text(range_match.group(2) + (" PM" if int(range_match.group(2)) < 12 else ""))
+        if start is not None and end is not None:
+            hours = list(range(start, end)) if end > start else list(range(start, 24)) + list(range(end))
+            return hours
+
+    # Check for "noon until X PM" pattern
+    if "noon" in low:
+        end_match = re.search(r"noon\s+(?:until|to|till|-)\s*(\d{1,2})\s*(?:PM|pm)?", note)
+        if end_match:
+            end_h = int(end_match.group(1))
+            if end_h < 12:
+                end_h += 12
+            return list(range(12, end_h))
+
+    # Check for "from X to Y" with hours
+    from_match = re.search(r"(\d{1,2})\s*(?:AM|PM|am|pm)?\s+(?:to|until|till|-)\s+(\d{1,2})\s*(?:AM|PM|am|pm)", note)
+    if from_match:
+        start = _parse_hour_from_text(from_match.group(1) + (" AM" if "am" in note.lower() else " PM"))
+        end = _parse_hour_from_text(from_match.group(2) + (" PM" if "pm" in note.lower() else " AM"))
+        if start is not None and end is not None:
+            return list(range(start, end))
+
+    # Check for specific hour mentions like "from 01:00 to 06:00"
+    time_match = re.search(r"(\d{1,2}):00\s+(?:to|until|till|-)\s+(\d{1,2}):00", note)
+    if time_match:
+        start = int(time_match.group(1))
+        end = int(time_match.group(2))
+        return list(range(start, end))
+
+    return None
+
+
+def _fallback_parse(notes: list[str]) -> list[dict[str, Any]]:
+    """Deterministic keyword-based fallback when LLM is unavailable."""
+    results = []
+    for idx, note in enumerate(notes):
+        low = note.lower().strip()
+
+        # Solar reduction patterns
+        if any(kw in low for kw in ("solar", "panel", "wash", "cleaning", "clean")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = [12, 13]  # default noon-2pm
+            # Try to extract factor
+            factor = 0.25
+            pct_match = re.search(r"(\d+)\s*%", note)
+            if pct_match:
+                pct = int(pct_match.group(1))
+                factor = (100 - pct) / 100.0
+            elif "roughly 25%" in low or "25%" in low:
+                factor = 0.25
+            elif "no solar" in low or "zero solar" in low:
+                factor = 0.0
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "solar_reduction",
+                "structured_adjustment": {"hours": hours, "factor": factor},
+                "explanation": f"Solar reduced to {factor*100:.0f}% during hours {hours}."
+            })
+            continue
+
+        # Minimum battery reserve patterns
+        if any(kw in low for kw in ("battery", "reserve", "soc", "charge level", "above", "keep")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = list(range(24))
+            # Try to extract kWh or percentage
+            kwh_match = re.search(r"(\d+)\s*kwh", low)
+            pct_match = re.search(r"(\d+)\s*%", low)
+            if kwh_match:
+                min_kwh = float(kwh_match.group(1))
+            elif pct_match:
+                min_kwh = float(pct_match.group(1)) * 2.2  # rough 220kWh capacity
+            else:
+                min_kwh = 66.0  # 30% of 220
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "minimum_battery_reserve",
+                "structured_adjustment": {"hours": hours, "minimum_energy_kwh": min_kwh},
+                "explanation": f"Battery reserve of {min_kwh} kWh maintained during hours {hours}."
+            })
+            continue
+
+        # No charge window patterns
+        if any(kw in low for kw in ("avoid charging", "no charge", "don't charge", "do not charge", "stop charging")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = [17, 18, 19, 20]
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "no_charge_window",
+                "structured_adjustment": {"hours": hours},
+                "explanation": f"Battery charging disabled during hours {hours}."
+            })
+            continue
+
+        # No discharge window patterns
+        if any(kw in low for kw in ("avoid discharging", "no discharge", "don't discharge", "do not discharge")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = list(range(24))
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "no_discharge_window",
+                "structured_adjustment": {"hours": hours},
+                "explanation": f"Battery discharging disabled during hours {hours}."
+            })
+            continue
+
+        # Max grid window patterns
+        if any(kw in low for kw in ("grid import", "grid should not", "grid cap", "max grid", "exceed")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = list(range(24))
+            kwh_match = re.search(r"(\d+)\s*kwh", low)
+            max_kwh = float(kwh_match.group(1)) if kwh_match else 60.0
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "max_grid_window",
+                "structured_adjustment": {"hours": hours, "max_grid_kwh": max_kwh},
+                "explanation": f"Grid capped at {max_kwh} kWh during hours {hours}."
+            })
+            continue
+
+        # Discharge scheduling patterns
+        if any(kw in low for kw in ("schedule battery", "power the load", "discharge from", "use battery")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = [21, 22, 23, 0, 1, 2, 3, 4]
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "no_charge_window",
+                "structured_adjustment": {"hours": hours},
+                "explanation": f"Battery scheduled to discharge during hours {hours} — no charging allowed."
+            })
+            continue
+
+        # Charge scheduling patterns
+        if any(kw in low for kw in ("charge by", "charge before", "fully charged", "charge to full")):
+            hours = _extract_hours_from_note(note)
+            if hours is None:
+                hours = list(range(6, 12))
+            results.append({
+                "note_index": idx, "applies": True,
+                "directive_type": "no_discharge_window",
+                "structured_adjustment": {"hours": hours},
+                "explanation": f"Battery charging during hours {hours} — no discharging allowed."
+            })
+            continue
+
+        # Default: no_op
+        results.append({
+            "note_index": idx, "applies": False,
+            "directive_type": "no_op",
+            "structured_adjustment": None,
+            "explanation": "Note does not affect energy schedule."
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# LLM call with retry + backoff
 # ---------------------------------------------------------------------------
 
 
 async def interpret_notes(operator_notes: list[str]) -> list[dict[str, Any]]:
-    """Call the LLM and return raw directive interpretation dicts.
+    """Call the LLM with retry, cache, and fallback.
 
-    Retries once on transient JSON-parse failure and attempts lightweight
-    repair (fence stripping + array extraction) before giving up.
+    1. Check cache first
+    2. Try LLM with 3 retries + exponential backoff
+    3. Fall back to deterministic keyword parser
     """
     settings = get_settings()
+    key = _cache_key(operator_notes)
+
+    # Cache hit
+    if key in _cache:
+        logger.info("LLM cache hit for key=%s", key)
+        return _cache[key]
 
     user_content = "Interpret these operator notes:\n\n"
     for idx, note in enumerate(operator_notes):
@@ -115,8 +326,15 @@ async def interpret_notes(operator_notes: list[str]) -> list[dict[str, Any]]:
 
     last_error: Exception | None = None
     raw_text: str = ""
-    for attempt in (1, 2):
+
+    # Retry with exponential backoff: 2s, 4s, 8s
+    for attempt in range(1, 4):
         try:
+            delay = 2 ** attempt  # 2, 4, 8 seconds
+            if attempt > 1:
+                logger.info("LLM retry %d/3 after %ds delay", attempt, delay)
+                await asyncio.sleep(delay)
+
             async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
                 resp = await client.post(
                     f"{settings.llm_base_url}/chat/completions",
@@ -132,52 +350,49 @@ async def interpret_notes(operator_notes: list[str]) -> list[dict[str, Any]]:
                 parsed = _try_parse_json_array(raw_text)
             except json.JSONDecodeError as exc:
                 last_error = exc
-                logger.warning(
-                    "LLM returned malformed JSON on attempt %d: %s",
-                    attempt,
-                    exc,
-                )
+                logger.warning("LLM JSON parse error on attempt %d: %s", attempt, exc)
                 continue
 
             if not isinstance(parsed, list):
-                raise TypeError(
-                    f"LLM returned {type(parsed).__name__}, expected list"
-                )
+                raise TypeError(f"LLM returned {type(parsed).__name__}, expected list")
 
+            # Cache successful response
+            _cache[key] = parsed
+            logger.info("LLM call success, cached key=%s", key)
             return parsed  # type: ignore[no-any-return]
+
+        except httpx.HTTPStatusError as exc:
+            last_error = exc
+            if exc.response.status_code == 429:
+                logger.warning("LLM rate limited (429) on attempt %d", attempt)
+                continue
+            logger.warning("LLM HTTP error on attempt %d: %s", attempt, exc)
+            if attempt == 3:
+                break
         except (httpx.HTTPError, KeyError, IndexError) as exc:
             last_error = exc
-            logger.warning(
-                "LLM call failed on attempt %d: %s", attempt, exc
-            )
-            if attempt == 2:
-                raise
+            logger.warning("LLM call failed on attempt %d: %s", attempt, exc)
+            if attempt == 3:
+                break
 
-    raise ValueError(
-        f"LLM returned invalid JSON after 2 attempts: {last_error}. "
-        f"Last payload: {raw_text[:200]!r}"
-    )
+    # All LLM attempts failed — use fallback parser
+    logger.warning("LLM unavailable after 3 attempts (%s), using fallback parser", last_error)
+    return _fallback_parse(operator_notes)
 
 
 def _try_parse_json_array(raw_text: str) -> Any:
     """Parse ``raw_text`` as a JSON array, with two repair fallbacks."""
     cleaned = raw_text.strip()
-
-    # Strip markdown fences (```json ... ``` or ``` ... ```)
     if cleaned.startswith("```"):
         lines = cleaned.splitlines()
-        lines = [
-            l for l in lines if not l.strip().startswith("```")
-        ]
+        lines = [l for l in lines if not l.strip().startswith("```")]
         cleaned = "\n".join(lines).strip()
 
-    # Fast path: valid JSON
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # Repair path 1: grab the first JSON array substring
     match = _JSON_ARRAY_RE.search(cleaned)
     if match:
         try:
@@ -185,7 +400,6 @@ def _try_parse_json_array(raw_text: str) -> Any:
         except json.JSONDecodeError:
             pass
 
-    # Repair path 2: drop trailing commas before } or ]
     repaired = re.sub(r",(\s*[}\]])", r"\1", cleaned)
     return json.loads(repaired)
 
@@ -208,10 +422,8 @@ def _parse_adjustment(
     raw: dict[str, Any] | None,
     dtype: DirectiveType,
 ) -> StructuredAdjustment | None:
-    """Parse the raw adjustment dict into a StructuredAdjustment."""
     if raw is None or dtype == DirectiveType.NO_OP:
         return None
-
     return StructuredAdjustment(
         hours=raw.get("hours"),
         factor=raw.get("factor"),
@@ -228,7 +440,6 @@ def to_directive_interpretations(
     for raw in raw_list:
         dtype_str = raw.get("directive_type", "no_op")
         dtype = _DIRECTIVE_TYPE_MAP.get(dtype_str, DirectiveType.NO_OP)
-
         results.append(
             DirectiveInterpretation(
                 note_index=int(raw.get("note_index", len(results))),

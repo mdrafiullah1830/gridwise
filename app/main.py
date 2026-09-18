@@ -1,20 +1,10 @@
-"""FastAPI application — GridWise Smart Campus Energy Optimisation Service.
-
-Endpoints
----------
-GET  /                       — Dashboard UI
-GET  /health                 — readiness probe
-GET  /scenarios              — list available sample scenarios
-POST /optimize-energy        — interpret operator notes + optimise 24-hour schedule
-POST /optimize-energy/baseline — compare directive-driven plan against no-directive baseline
-"""
+"""FastAPI application — GridWise Smart Campus Energy Optimisation Service."""
 
 from __future__ import annotations
 
 import json
 import logging
 import time
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -29,6 +19,7 @@ from .llm import interpret_notes, to_directive_interpretations
 from .models import (
     BaselineResponse,
     CarbonOptimizeRequest,
+    CarbonOptimizeResponse,
     CompareRequest,
     CompareResponse,
     DirectiveInterpretation,
@@ -42,10 +33,7 @@ from .models import (
 )
 from .optimizer import optimize, optimize_carbon
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] [%(request_id)s] %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 logger = logging.getLogger("gridwise")
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -55,28 +43,19 @@ STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(app: FastAPI):
     settings = get_settings()
     if not settings.llm_api_key:
-        logger.warning(
-            "LLM_API_KEY is not set — LLM calls will fail at runtime",
-            extra={"request_id": "-"},
-        )
-    logger.info(
-        "GridWise starting — model=%s, base_url=%s",
-        settings.llm_model,
-        settings.llm_base_url,
-        extra={"request_id": "-"},
-    )
+        logger.warning("LLM_API_KEY is not set — LLM calls will fail at runtime")
+    logger.info("GridWise starting — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
     yield
-    logger.info("GridWise shutting down", extra={"request_id": "-"})
+    logger.info("GridWise shutting down")
 
 
 app = FastAPI(
     title="GridWise",
     description="Smart Campus Energy Optimisation — LLM-Assisted Operator Directive Interpretation",
-    version="2.1.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
-# CORS: env-driven allowlist. Defaults to wildcard for local dev.
 _settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
@@ -85,28 +64,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def add_request_id(request: Request, call_next):
-    """Attach a request_id to every request and log access."""
-    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
-    request.state.request_id = request_id
-    old_factory = logging.getLogRecordFactory()
-
-    def factory(*args, **kwargs):
-        record = old_factory(*args, **kwargs)
-        record.request_id = getattr(record, "request_id", request_id)
-        return record
-
-    logging.setLogRecordFactory(factory)
-    try:
-        response = await call_next(request)
-    finally:
-        logging.setLogRecordFactory(old_factory)
-    response.headers["X-Request-ID"] = request_id
-    return response
-
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -122,9 +79,7 @@ async def health() -> JSONResponse:
 
 
 @app.get("/scenarios")
-async def scenarios(request: Request) -> JSONResponse:
-    """Return the public sample cases for the dashboard."""
-    rid = getattr(request.state, "request_id", "-")
+async def scenarios() -> JSONResponse:
     samples_path = Path(get_settings().samples_file)
     if not samples_path.is_absolute():
         samples_path = Path(__file__).resolve().parent.parent / samples_path
@@ -143,174 +98,75 @@ async def scenarios(request: Request) -> JSONResponse:
             })
         return JSONResponse(content={"count": len(samples), "samples": samples})
     except (OSError, json.JSONDecodeError, AttributeError) as exc:
-        logger.error(
-            "Failed to load samples: %s", exc, extra={"request_id": rid}
-        )
-        return JSONResponse(
-            content={"count": 0, "samples": [], "error": str(exc)},
-            status_code=500,
-        )
+        logger.error("Failed to load samples: %s", exc)
+        return JSONResponse(content={"count": 0, "samples": [], "error": str(exc)}, status_code=500)
 
 
 @app.post("/optimize-energy")
 async def optimize_energy(request: Request, body: OptimizeRequest) -> OptimizeResponse:
-    """Interpret operator notes and produce an optimal 24-hour energy schedule."""
-    rid = getattr(request.state, "request_id", "-")
     t0 = time.monotonic()
 
     try:
         raw_directives = await interpret_notes(body.operator_notes)
     except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
-        logger.error(
-            "LLM call failed: %s", exc, extra={"request_id": rid}
-        )
+        logger.error("LLM call failed: %s", exc)
         raw_directives = [
-            {
-                "note_index": i,
-                "applies": False,
-                "directive_type": "no_op",
-                "structured_adjustment": None,
-                "explanation": f"LLM unavailable — note treated as no_op: {exc}",
-            }
+            {"note_index": i, "applies": False, "directive_type": "no_op",
+             "structured_adjustment": None, "explanation": str(exc)}
             for i in range(len(body.operator_notes))
         ]
 
     directives = to_directive_interpretations(raw_directives)
 
     try:
-        directives = validate_directives(
-            directives, body.hours, len(body.operator_notes)
-        )
+        directives = validate_directives(directives, body.hours, len(body.operator_notes))
     except GuardrailError as exc:
-        logger.error(
-            "Guardrail failure: %s", exc, extra={"request_id": rid}
-        )
-        raise HTTPException(
-            status_code=422,
-            detail=f"Directive interpretation failed guardrails: {exc}",
-        ) from exc
+        logger.error("Guardrail failure: %s", exc)
+        raise HTTPException(status_code=422, detail=f"Guardrails: {exc}") from exc
 
     try:
-        response = optimize(
-            hours=body.hours,
-            battery=body.battery,
-            directives=directives,
-            scenario_id=body.scenario_id,
-        )
+        response = optimize(hours=body.hours, battery=body.battery, directives=directives, scenario_id=body.scenario_id)
     except RuntimeError as exc:
-        logger.error(
-            "Optimizer failed: %s", exc, extra={"request_id": rid}
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Optimizer failed: {exc}",
-        ) from exc
+        logger.error("Optimizer failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Optimizer: {exc}") from exc
 
     elapsed = time.monotonic() - t0
-    logger.info(
-        "scenario=%s directives=%d cost=%.2f elapsed=%.3fs",
-        body.scenario_id,
-        len(directives),
-        response.total_cost_bdt,
-        elapsed,
-        extra={"request_id": rid},
-    )
-
+    logger.info("scenario=%s cost=%.2f elapsed=%.3fs", body.scenario_id, response.total_cost_bdt, elapsed)
     return response
 
 
 @app.post("/optimize-energy/baseline", response_model=BaselineResponse)
-async def optimize_energy_baseline(
-    request: Request, body: OptimizeRequest
-) -> BaselineResponse:
-    """Run the optimiser twice — once with directives, once without — and
-    return a comparison response showing cost savings vs the no-directive
-    baseline. Useful for demonstrating directive impact in the UI.
-    """
-    rid = getattr(request.state, "request_id", "-")
-    t0 = time.monotonic()
-
-    # --- Interpret + validate directives (same path as /optimize-energy) ---
+async def optimize_energy_baseline(request: Request, body: OptimizeRequest) -> BaselineResponse:
     try:
         raw_directives = await interpret_notes(body.operator_notes)
     except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
-        logger.error(
-            "LLM call failed: %s", exc, extra={"request_id": rid}
-        )
         raw_directives = [
-            {
-                "note_index": i,
-                "applies": False,
-                "directive_type": "no_op",
-                "structured_adjustment": None,
-                "explanation": f"LLM unavailable — note treated as no_op: {exc}",
-            }
+            {"note_index": i, "applies": False, "directive_type": "no_op",
+             "structured_adjustment": None, "explanation": str(exc)}
             for i in range(len(body.operator_notes))
         ]
 
     directives = to_directive_interpretations(raw_directives)
     try:
-        directives = validate_directives(
-            directives, body.hours, len(body.operator_notes)
-        )
+        directives = validate_directives(directives, body.hours, len(body.operator_notes))
     except GuardrailError as exc:
-        logger.error(
-            "Guardrail failure: %s", exc, extra={"request_id": rid}
-        )
-        raise HTTPException(
-            status_code=422,
-            detail=f"Directive interpretation failed guardrails: {exc}",
-        ) from exc
+        raise HTTPException(status_code=422, detail=f"Guardrails: {exc}") from exc
 
-    # --- Solve both scenarios ---
     try:
-        optimised = optimize(
-            hours=body.hours,
-            battery=body.battery,
-            directives=directives,
-            scenario_id=body.scenario_id,
-        )
+        optimised = optimize(hours=body.hours, battery=body.battery, directives=directives, scenario_id=body.scenario_id)
         baseline = optimize(
-            hours=body.hours,
-            battery=body.battery,
-            directives=[
-                DirectiveInterpretation(
-                    note_index=i,
-                    applies=False,
-                    directive_type=DirectiveType.NO_OP,
-                    structured_adjustment=None,
-                    explanation="baseline",
-                )
-                for i in range(len(body.operator_notes))
-            ],
+            hours=body.hours, battery=body.battery,
+            directives=[DirectiveInterpretation(
+                note_index=i, applies=False, directive_type=DirectiveType.NO_OP,
+                structured_adjustment=None, explanation="baseline"
+            ) for i in range(len(body.operator_notes))],
             scenario_id=f"{body.scenario_id}-BASELINE",
         )
     except RuntimeError as exc:
-        logger.error(
-            "Optimizer failed: %s", exc, extra={"request_id": rid}
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Optimizer failed: {exc}",
-        ) from exc
+        raise HTTPException(status_code=500, detail=f"Optimizer: {exc}") from exc
 
     savings_bdt = baseline.total_cost_bdt - optimised.total_cost_bdt
-    savings_pct = (
-        (savings_bdt / baseline.total_cost_bdt) * 100.0
-        if baseline.total_cost_bdt > 0
-        else 0.0
-    )
-    elapsed = time.monotonic() - t0
-    logger.info(
-        "baseline scenario=%s baseline_cost=%.2f optimised_cost=%.2f savings=%.2f (%.1f%%) elapsed=%.3fs",
-        body.scenario_id,
-        baseline.total_cost_bdt,
-        optimised.total_cost_bdt,
-        savings_bdt,
-        savings_pct,
-        elapsed,
-        extra={"request_id": rid},
-    )
+    savings_pct = (savings_bdt / baseline.total_cost_bdt * 100.0) if baseline.total_cost_bdt > 0 else 0.0
 
     return BaselineResponse(
         scenario_id=body.scenario_id,
@@ -329,32 +185,23 @@ async def optimize_energy_baseline(
     )
 
 
-# ---------------------------------------------------------------------------
-# Scenario comparison
-# ---------------------------------------------------------------------------
-
 @app.post("/compare")
 async def compare_scenarios(request: Request, body: CompareRequest) -> CompareResponse:
-    """Run multiple scenarios and return a side-by-side comparison."""
     summaries = []
     for req in body.scenarios:
         try:
             raw_directives = await interpret_notes(req.operator_notes)
-        except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
+        except (RuntimeError, ConnectionError, TimeoutError, ValueError):
             raw_directives = [
                 {"note_index": i, "applies": False, "directive_type": "no_op",
-                 "structured_adjustment": None, "explanation": str(exc)}
+                 "structured_adjustment": None, "explanation": "LLM unavailable"}
                 for i in range(len(req.operator_notes))
             ]
         directives = to_directive_interpretations(raw_directives)
         try:
             directives = validate_directives(directives, req.hours, len(req.operator_notes))
         except GuardrailError:
-            directives = to_directive_interpretations([
-                {"note_index": i, "applies": False, "directive_type": "no_op",
-                 "structured_adjustment": None, "explanation": "guardrail error"}
-                for i in range(len(req.operator_notes))
-            ])
+            pass
 
         try:
             baseline = optimize(
@@ -365,10 +212,7 @@ async def compare_scenarios(request: Request, body: CompareRequest) -> CompareRe
                 ) for i in range(len(req.operator_notes))],
                 scenario_id=f"{req.scenario_id}-BASE",
             )
-            optimised = optimize(
-                hours=req.hours, battery=req.battery,
-                directives=directives, scenario_id=req.scenario_id,
-            )
+            optimised = optimize(hours=req.hours, battery=req.battery, directives=directives, scenario_id=req.scenario_id)
             savings = baseline.total_cost_bdt - optimised.total_cost_bdt
             savings_pct = (savings / baseline.total_cost_bdt * 100) if baseline.total_cost_bdt > 0 else 0
         except RuntimeError:
@@ -398,13 +242,8 @@ async def compare_scenarios(request: Request, body: CompareRequest) -> CompareRe
     )
 
 
-# ---------------------------------------------------------------------------
-# What-if analysis
-# ---------------------------------------------------------------------------
-
 @app.post("/what-if")
 async def what_if(request: Request, body: WhatIfRequest) -> WhatIfResponse:
-    """Run the optimizer across multiple values of a single parameter."""
     points = []
 
     try:
@@ -450,16 +289,8 @@ async def what_if(request: Request, body: WhatIfRequest) -> WhatIfResponse:
     return WhatIfResponse(scenario_id=body.scenario_id, param=body.param, points=points, baseline_cost_bdt=baseline_cost)
 
 
-# ---------------------------------------------------------------------------
-# Carbon-aware optimisation
-# ---------------------------------------------------------------------------
-
 @app.post("/optimize-carbon")
 async def optimize_carbon_endpoint(request: Request, body: CarbonOptimizeRequest):
-    """Multi-objective optimisation: minimise weighted cost + carbon."""
-    rid = getattr(request.state, "request_id", "-")
-    t0 = time.monotonic()
-
     try:
         raw_directives = await interpret_notes(body.operator_notes)
     except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
@@ -473,7 +304,7 @@ async def optimize_carbon_endpoint(request: Request, body: CarbonOptimizeRequest
     try:
         directives = validate_directives(directives, body.hours, len(body.operator_notes))
     except GuardrailError as exc:
-        raise HTTPException(status_code=422, detail=f"Guardrail failure: {exc}") from exc
+        raise HTTPException(status_code=422, detail=f"Guardrails: {exc}") from exc
 
     try:
         resp, carbon, weighted = optimize_carbon(
@@ -482,13 +313,8 @@ async def optimize_carbon_endpoint(request: Request, body: CarbonOptimizeRequest
             cost_weight=body.cost_weight, carbon_weight=body.carbon_weight,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=f"Optimizer failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Optimizer: {exc}") from exc
 
-    elapsed = time.monotonic() - t0
-    logger.info("carbon scenario=%s carbon=%.2f weighted=%.2f elapsed=%.3fs",
-                body.scenario_id, carbon, weighted, elapsed, extra={"request_id": rid})
-
-    from .models import CarbonOptimizeResponse
     return CarbonOptimizeResponse(
         scenario_id=resp.scenario_id, directive_interpretation=resp.directive_interpretation,
         hourly_plan=resp.hourly_plan, total_grid_kwh=resp.total_grid_kwh,
@@ -500,13 +326,8 @@ async def optimize_carbon_endpoint(request: Request, body: CarbonOptimizeRequest
     )
 
 
-# ---------------------------------------------------------------------------
-# Run history
-# ---------------------------------------------------------------------------
-
 @app.get("/history")
 async def get_history(limit: int = 50, offset: int = 0):
-    """Return past optimisation runs."""
     from .database import get_runs, get_stats
     runs = get_runs(limit=limit, offset=offset)
     stats = get_stats()
@@ -515,7 +336,6 @@ async def get_history(limit: int = 50, offset: int = 0):
 
 @app.get("/history/{run_id}")
 async def get_history_run(run_id: int):
-    """Return a single past run with full response."""
     from .database import get_run
     run = get_run(run_id)
     if run is None:
@@ -525,7 +345,6 @@ async def get_history_run(run_id: int):
 
 @app.delete("/history/{run_id}")
 async def delete_history_run(run_id: int):
-    """Delete a past run."""
     from .database import delete_run
     if not delete_run(run_id):
         raise HTTPException(status_code=404, detail="Run not found")
@@ -534,7 +353,6 @@ async def delete_history_run(run_id: int):
 
 @app.post("/history/save")
 async def save_history_run(request: Request):
-    """Save a run from the frontend."""
     from .database import save_run
     body = await request.json()
     run_id = save_run(
@@ -547,13 +365,8 @@ async def save_history_run(request: Request):
     return JSONResponse(content={"run_id": run_id})
 
 
-# ---------------------------------------------------------------------------
-# Scenario templates
-# ---------------------------------------------------------------------------
-
 @app.get("/templates")
 async def get_templates():
-    """Return pre-built scenario templates."""
     from .models import BatterySpec, HourEntry, ScenarioTemplate
 
     templates = [
