@@ -359,6 +359,13 @@ async def optimize_carbon_endpoint(request: Request, body: CarbonOptimizeRequest
     )
 
 
+@app.get("/history/trend")
+async def get_cost_trend(limit: int = 50, scenario_id: str | None = None):
+    from .database import get_cost_trend as db_trend
+    trend = db_trend(limit=limit, scenario_id=scenario_id)
+    return JSONResponse(content={"trend": trend, "count": len(trend)})
+
+
 @app.get("/history")
 async def get_history(limit: int = 50, offset: int = 0):
     from .database import get_runs, get_stats
@@ -492,17 +499,6 @@ async def generate_pdf_report(request: Request):
     except Exception as exc:
         logger.error("PDF generation failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc
-
-
-# ---------------------------------------------------------------------------
-# Cost Trend (v4.0)
-# ---------------------------------------------------------------------------
-
-@app.get("/history/trend")
-async def get_cost_trend(limit: int = 50, scenario_id: str | None = None):
-    from .database import get_cost_trend as db_trend
-    trend = db_trend(limit=limit, scenario_id=scenario_id)
-    return JSONResponse(content={"trend": trend, "count": len(trend)})
 
 
 # ---------------------------------------------------------------------------
