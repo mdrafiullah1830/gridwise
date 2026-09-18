@@ -30,6 +30,8 @@ from .models import (
     OptimizeResponse,
     ScenarioSummary,
     TariffConfig,
+    Violation,
+    ViolationSeverity,
     WhatIfPoint,
     WhatIfRequest,
     WhatIfResponse,
