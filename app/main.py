@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,7 @@ from .guardrails import GuardrailError, validate_directives
 from .llm import interpret_notes, to_directive_interpretations
 from .models import (
     BaselineResponse,
+    BatteryDegradation,
     CarbonOptimizeRequest,
     CarbonOptimizeResponse,
     CompareRequest,
@@ -27,6 +28,7 @@ from .models import (
     OptimizeRequest,
     OptimizeResponse,
     ScenarioSummary,
+    TariffConfig,
     WhatIfPoint,
     WhatIfRequest,
     WhatIfResponse,
@@ -52,7 +54,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="GridWise",
     description="Smart Campus Energy Optimisation — LLM-Assisted Operator Directive Interpretation",
-    version="3.0.0",
+    version="4.0.0",
     lifespan=lifespan,
 )
 
@@ -124,14 +126,33 @@ async def optimize_energy(request: Request, body: OptimizeRequest) -> OptimizeRe
         logger.error("Guardrail failure: %s", exc)
         raise HTTPException(status_code=422, detail=f"Guardrails: {exc}") from exc
 
+    # Parse optional tariff config and degradation from request body
+    raw_body = await request.json()
+    tariff_config = None
+    degradation = None
+    if raw_body.get("tariff_config"):
+        tariff_config = TariffConfig(**raw_body["tariff_config"])
+    if raw_body.get("degradation"):
+        degradation = BatteryDegradation(**raw_body["degradation"])
+
     try:
-        response = optimize(hours=body.hours, battery=body.battery, directives=directives, scenario_id=body.scenario_id)
+        response = optimize(
+            hours=body.hours, battery=body.battery, directives=directives,
+            scenario_id=body.scenario_id, tariff_config=tariff_config,
+            degradation=degradation,
+        )
     except RuntimeError as exc:
         logger.error("Optimizer failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"Optimizer: {exc}") from exc
 
+    # Detect constraint violations
+    from .alerts import detect_violations, violations_summary
+    violations = detect_violations(response.hourly_plan, body.hours, body.battery, list(directives))
+    response.violations = violations
+    response.violation_summary = violations_summary(violations)
+
     elapsed = time.monotonic() - t0
-    logger.info("scenario=%s cost=%.2f elapsed=%.3fs", body.scenario_id, response.total_cost_bdt, elapsed)
+    logger.info("scenario=%s cost=%.2f elapsed=%.3fs violations=%d", body.scenario_id, response.total_cost_bdt, elapsed, len(violations))
     return response
 
 
@@ -361,6 +382,7 @@ async def save_history_run(request: Request):
         response=body.get("response", {}),
         baseline=body.get("baseline"),
         elapsed_ms=body.get("elapsed_ms"),
+        total_carbon_kg=body.get("total_carbon_kg", 0.0),
     )
     return JSONResponse(content={"run_id": run_id})
 
@@ -458,3 +480,105 @@ async def generate_pdf_report(request: Request):
     except Exception as exc:
         logger.error("PDF generation failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Cost Trend (v4.0)
+# ---------------------------------------------------------------------------
+
+@app.get("/history/trend")
+async def get_cost_trend(limit: int = 50, scenario_id: str | None = None):
+    from .database import get_cost_trend as db_trend
+    trend = db_trend(limit=limit, scenario_id=scenario_id)
+    return JSONResponse(content={"trend": trend, "count": len(trend)})
+
+
+# ---------------------------------------------------------------------------
+# Carbon Stats (v4.0)
+# ---------------------------------------------------------------------------
+
+@app.get("/carbon/stats")
+async def get_carbon_stats():
+    from .database import get_carbon_stats as db_carbon_stats
+    stats = db_carbon_stats()
+    return JSONResponse(content=stats)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — Live Optimisation Streaming (v4.0)
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws/optimize")
+async def ws_optimize(websocket: WebSocket):
+    """Stream optimisation progress via WebSocket."""
+    await websocket.accept()
+    try:
+        body = await websocket.receive_json()
+        notes = body.get("operator_notes", [])
+        hours_raw = body.get("hours", [])
+        battery_raw = body.get("battery", {})
+
+        await websocket.send_json({"step": "connecting", "message": "Connected to GridWise", "progress": 10})
+
+        # Parse models
+        from .models import BatterySpec, HourEntry
+        hours = [HourEntry(**h) for h in hours_raw]
+        battery = BatterySpec(**battery_raw)
+
+        await websocket.send_json({"step": "interpreting", "message": "Interpreting operator notes with LLM...", "progress": 25})
+
+        # LLM interpretation
+        try:
+            raw_directives = await interpret_notes(notes)
+        except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
+            raw_directives = [
+                {"note_index": i, "applies": False, "directive_type": "no_op",
+                 "structured_adjustment": None, "explanation": str(exc)}
+                for i in range(len(notes))
+            ]
+
+        directives = to_directive_interpretations(raw_directives)
+        await websocket.send_json({"step": "validating", "message": "Running guardrails validation...", "progress": 50})
+
+        try:
+            directives = validate_directives(directives, hours, len(notes))
+        except GuardrailError as exc:
+            await websocket.send_json({"step": "error", "message": f"Guardrail error: {exc}", "progress": 0})
+            return
+
+        await websocket.send_json({"step": "solving", "message": "Solving MILP optimisation...", "progress": 70})
+
+        # Parse optional tariff/degradation
+        tariff_config = None
+        degradation = None
+        if body.get("tariff_config"):
+            tariff_config = TariffConfig(**body["tariff_config"])
+        if body.get("degradation"):
+            degradation = BatteryDegradation(**body["degradation"])
+
+        try:
+            response = optimize(
+                hours=hours, battery=battery, directives=directives,
+                scenario_id=body.get("scenario_id", "WS-OPTIMIZE"),
+                tariff_config=tariff_config, degradation=degradation,
+            )
+        except RuntimeError as exc:
+            await websocket.send_json({"step": "error", "message": f"Optimizer failed: {exc}", "progress": 0})
+            return
+
+        # Detect violations
+        from .alerts import detect_violations, violations_summary
+        violations = detect_violations(response.hourly_plan, hours, battery, list(directives))
+        response.violations = violations
+        response.violation_summary = violations_summary(violations)
+
+        await websocket.send_json({"step": "complete", "message": "Optimisation complete!", "progress": 100, "response": response.model_dump()})
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
+    except (RuntimeError, ValueError, KeyError) as exc:
+        logger.error("WebSocket error: %s", exc)
+        try:
+            await websocket.send_json({"step": "error", "message": str(exc), "progress": 0})
+        except WebSocketDisconnect:
+            pass

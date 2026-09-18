@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadSamples();
     loadTemplates();
     loadHistory();
+    loadCarbonStats();
     checkHealth();
     setInterval(checkHealth, 30000);
     document.addEventListener('keydown', handleKeys);
@@ -21,6 +22,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     restoreURLState();
     addCompareSlot();
     addCompareSlot();
+    // Tariff toggle
+    const tariffCb = document.getElementById('tariffEnabled');
+    if (tariffCb) tariffCb.addEventListener('change', (e) => {
+        document.getElementById('tariffConfig').style.display = e.target.checked ? 'block' : 'none';
+    });
+    // Degradation toggle
+    const degCb = document.getElementById('degradationEnabled');
+    if (degCb) degCb.addEventListener('change', (e) => {
+        document.getElementById('degradationConfig').style.display = e.target.checked ? 'block' : 'none';
+    });
 });
 
 /* ── Tab Navigation ───────────────────────────────────── */
@@ -205,6 +216,20 @@ async function runOptimization() {
     const btn = document.getElementById('optimizeBtn'); const btnText = document.getElementById('optimizeBtnText');
     btn.disabled = true; btnText.textContent = 'Processing...';
     showLoading('Interpreting operator notes with LLM...');
+
+    // Add tariff config if enabled
+    if (document.getElementById('tariffEnabled')?.checked) {
+        payload.tariff_config = { enabled: true, tiers: getTariffTiers() };
+    }
+    // Add degradation if enabled
+    if (document.getElementById('degradationEnabled')?.checked) {
+        payload.degradation = {
+            enabled: true,
+            cost_per_cycle_bdt: parseFloat(document.getElementById('degradationCost')?.value) || 0.5,
+            max_cycles: parseInt(document.getElementById('degradationMaxCycles')?.value) || 3000,
+        };
+    }
+
     try {
         const res = await fetch('/optimize-energy', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         const data = await res.json(); hideLoading();
@@ -377,13 +402,37 @@ async function runDemo() {
 function renderResults(data) {
     const sec = document.getElementById('resultsSection'); sec.style.display='block';
     const cap = parseFloat(document.getElementById('batteryCapacity').value)||220;
+    const violations = data.violations || [];
+    const vSummary = data.violation_summary || {};
+    const isClean = vSummary.is_clean !== false;
+    const tariffLabel = data.tariff_tier_label || 'flat';
+    const degCost = data.degradation_cost_bdt || 0;
+    const totalCycles = data.total_cycles || 0;
+
+    let alertHTML = '';
+    if (violations.length > 0) {
+        alertHTML = `<div class="alert-panel ${vSummary.high > 0 ? 'alert-critical' : 'alert-warning'}">
+            <div class="alert-header"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span>${violations.length} Constraint Violation${violations.length > 1 ? 's' : ''}</span></div>
+            <div class="alert-badges"><span class="alert-badge alert-high">${vSummary.high || 0} High</span><span class="alert-badge alert-medium">${vSummary.medium || 0} Medium</span><span class="alert-badge alert-low">${vSummary.low || 0} Low</span></div>
+            <div class="alert-list">${violations.slice(0, 10).map(v => `<div class="alert-item alert-${v.severity}"><span class="alert-hour">H${String(v.hour).padStart(2,'0')}</span><span class="alert-msg">${v.message}</span></div>`).join('')}${violations.length > 10 ? `<div class="alert-more">+${violations.length - 10} more...</div>` : ''}</div>
+        </div>`;
+    } else {
+        alertHTML = `<div class="alert-panel alert-clean"><div class="alert-header"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>All Constraints Satisfied</span></div></div>`;
+    }
+
     sec.innerHTML = `
+        ${alertHTML}
         <div class="summary-grid">
             <div class="summary-card"><div class="summary-icon blue"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="summary-data"><span class="summary-value">${data.total_cost_bdt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="summary-label">Total Cost (BDT)</span></div></div>
             <div class="summary-card"><div class="summary-icon green"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div class="summary-data"><span class="summary-value">${data.total_grid_kwh.toFixed(1)}</span><span class="summary-label">Grid Total (kWh)</span></div></div>
             <div class="summary-card"><div class="summary-icon orange"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="summary-data"><span class="summary-value">${data.peak_grid_kwh.toFixed(1)}</span><span class="summary-label">Peak Grid (kWh)</span></div></div>
             <div class="summary-card"><div class="summary-icon purple"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="summary-data"><span class="summary-value">${data.solver_status||'Optimal'}</span><span class="summary-label">Solver Status</span></div></div>
         </div>
+        ${degCost > 0 || tariffLabel !== 'flat' ? `<div class="summary-grid">
+            ${tariffLabel !== 'flat' ? `<div class="summary-card summary-card-sm"><div class="summary-icon teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><div class="summary-data"><span class="summary-value">${tariffLabel}</span><span class="summary-label">Tariff Tier</span></div></div>` : ''}
+            ${degCost > 0 ? `<div class="summary-card summary-card-sm"><div class="summary-icon red"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg></div><div class="summary-data"><span class="summary-value">${degCost.toFixed(2)}</span><span class="summary-label">Degradation (BDT)</span></div></div>` : ''}
+            ${totalCycles > 0 ? `<div class="summary-card summary-card-sm"><div class="summary-icon orange"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></div><div class="summary-data"><span class="summary-value">${totalCycles.toFixed(2)}</span><span class="summary-label">Battery Cycles</span></div></div>` : ''}
+        </div>` : ''}
         <div class="card"><div class="card-header"><h2>LLM Directive Interpretation</h2><button class="btn btn-ghost btn-sm" onclick="copyDirectives()">Copy</button></div><div id="directiveList">${renderDirectivesHTML(data.directive_interpretation)}</div></div>
         <div class="charts-grid">
             <div class="card"><div class="card-header"><h2>Grid vs Solar</h2></div><div class="chart-container"><canvas id="gridSolarChart"></canvas></div></div>
@@ -570,3 +619,181 @@ function hideLoading(){document.getElementById('loadingOverlay').style.display='
 
 /* ── Toast ────────────────────────────────────────────── */
 function toast(msg,type='info'){const c=document.getElementById('toastContainer');const el=document.createElement('div');el.className=`toast toast-${type}`;const icons={success:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',error:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',info:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'};el.innerHTML=`${icons[type]||icons.info}<span>${msg}</span>`;c.appendChild(el);setTimeout(()=>{el.style.animation='toastOut 0.3s ease-in forwards';setTimeout(()=>el.remove(),300);},4000);}
+
+/* ════════════════════════════════════════════════════════════
+   v4.0 FEATURES
+   ════════════════════════════════════════════════════════════ */
+
+/* ── WebSocket Live Optimisation ─────────────────────── */
+let wsConnection = null;
+
+function runOptimizationWS() {
+    const payload = buildPayload(); if (!payload) return;
+    const btn = document.getElementById('optimizeBtn'); const btnText = document.getElementById('optimizeBtnText');
+    btn.disabled = true; btnText.textContent = 'Connecting...';
+
+    // Add tariff config if enabled
+    if (document.getElementById('tariffEnabled')?.checked) {
+        payload.tariff_config = { enabled: true, tiers: getTariffTiers() };
+    }
+    // Add degradation if enabled
+    if (document.getElementById('degradationEnabled')?.checked) {
+        payload.degradation = {
+            enabled: true,
+            cost_per_cycle_bdt: parseFloat(document.getElementById('degradationCost')?.value) || 0.5,
+            max_cycles: parseInt(document.getElementById('degradationMaxCycles')?.value) || 3000,
+        };
+    }
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsConnection = new WebSocket(`${proto}//${location.host}/ws/optimize`);
+
+    wsConnection.onopen = () => {
+        document.getElementById('loadingOverlay').style.display = 'flex';
+        document.getElementById('loadingText').textContent = 'Connected — sending data...';
+        wsConnection.send(JSON.stringify(payload));
+    };
+
+    wsConnection.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        document.getElementById('loadingText').textContent = msg.message || 'Processing...';
+        document.getElementById('loadingBar').style.width = `${msg.progress || 0}%`;
+
+        if (msg.step === 'complete' && msg.response) {
+            currentResponse = msg.response;
+            renderResults(msg.response);
+            saveToHistory(payload, msg.response);
+            hideLoading();
+            btn.disabled = false; btnText.textContent = 'Optimise Schedule';
+            toast(`Optimised via WebSocket — BDT ${msg.response.total_cost_bdt}`, 'success');
+            wsConnection = null;
+        } else if (msg.step === 'error') {
+            hideLoading();
+            btn.disabled = false; btnText.textContent = 'Optimise Schedule';
+            toast(`Failed: ${msg.message}`, 'error');
+            wsConnection = null;
+        }
+    };
+
+    wsConnection.onerror = () => {
+        hideLoading();
+        btn.disabled = false; btnText.textContent = 'Optimise Schedule';
+        toast('WebSocket error — falling back to HTTP', 'error');
+        wsConnection = null;
+        runOptimization();
+    };
+
+    wsConnection.onclose = () => {
+        if (btn.disabled) {
+            hideLoading();
+            btn.disabled = false; btnText.textContent = 'Optimise Schedule';
+        }
+    };
+}
+
+/* ── Tariff Tiers ────────────────────────────────────── */
+function getTariffTiers() {
+    const tiers = [];
+    const peakHours = document.getElementById('tariffPeakHours')?.value || '18-22';
+    const shoulderHours = document.getElementById('tariffShoulderHours')?.value || '8-17';
+    const offPeakHours = document.getElementById('tariffOffPeakHours')?.value || '0-6,23';
+    const peakMult = parseFloat(document.getElementById('tariffPeakMult')?.value) || 2.0;
+    const shoulderMult = parseFloat(document.getElementById('tariffShoulderMult')?.value) || 1.0;
+    const offPeakMult = parseFloat(document.getElementById('tariffOffPeakMult')?.value) || 0.5;
+
+    function parseHours(range) {
+        const hours = [];
+        range.split(',').forEach(part => {
+            const [a, b] = part.split('-').map(Number);
+            if (b !== undefined) { for (let i = a; i <= b; i++) hours.push(i % 24); }
+            else if (!isNaN(a)) hours.push(a % 24);
+        });
+        return hours;
+    }
+
+    if (peakHours) tiers.push({ name: 'peak', hours: parseHours(peakHours), multiplier: peakMult });
+    if (shoulderHours) tiers.push({ name: 'shoulder', hours: parseHours(shoulderHours), multiplier: shoulderMult });
+    if (offPeakHours) tiers.push({ name: 'off-peak', hours: parseHours(offPeakHours), multiplier: offPeakMult });
+    return tiers;
+}
+
+/* ── Cost Trend ──────────────────────────────────────── */
+async function loadCostTrend() {
+    try {
+        const r = await fetch('/history/trend?limit=50'); const d = await r.json();
+        renderCostTrend(d.trend);
+    } catch { document.getElementById('costTrendSection').innerHTML = '<p class="hint">No trend data yet.</p>'; }
+}
+
+function renderCostTrend(trend) {
+    const sec = document.getElementById('costTrendSection');
+    if (!trend.length) { sec.innerHTML = '<p class="hint">No trend data yet. Run some optimisations to see cost trends.</p>'; return; }
+    sec.innerHTML = `<div class="card"><div class="card-header"><h2>Cost Trend Over Time</h2><span class="hint">${trend.length} runs</span></div><div class="chart-container"><canvas id="costTrendChart"></canvas></div></div>`;
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const textColor = isDark ? '#94a3b8' : '#475569';
+    const gridColor = isDark ? 'rgba(148,163,184,0.1)' : 'rgba(15,23,42,0.06)';
+    if (charts.costTrend) charts.costTrend.destroy();
+    charts.costTrend = new Chart(document.getElementById('costTrendChart'), {
+        type: 'line',
+        data: {
+            labels: trend.map(t => t.created_at?.substring(5, 16) || t.run_id),
+            datasets: [{
+                label: 'Cost (BDT)',
+                data: trend.map(t => t.total_cost_bdt),
+                borderColor: '#60a5fa',
+                backgroundColor: 'rgba(96,165,250,0.1)',
+                fill: true, tension: 0.3, pointRadius: 3,
+            }, {
+                label: 'Grid (kWh)',
+                data: trend.map(t => t.total_grid_kwh),
+                borderColor: '#34d399',
+                backgroundColor: 'transparent',
+                borderWidth: 2, tension: 0.3, pointRadius: 2, yAxisID: 'y1',
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { color: textColor, maxRotation: 45, font: { size: 10 } }, grid: { color: gridColor } },
+                y: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: false, title: { display: true, text: 'Cost (BDT)', color: textColor } },
+                y1: { position: 'right', ticks: { color: textColor }, grid: { drawOnChartArea: false }, title: { display: true, text: 'Grid (kWh)', color: textColor } },
+            },
+            plugins: { legend: { labels: { color: textColor } } }
+        }
+    });
+}
+
+/* ── Carbon Stats ────────────────────────────────────── */
+async function loadCarbonStats() {
+    try {
+        const r = await fetch('/carbon/stats'); const d = await r.json();
+        renderCarbonStats(d);
+    } catch {}
+}
+
+function renderCarbonStats(stats) {
+    const sec = document.getElementById('carbonStatsSection');
+    if (!sec) return;
+    sec.innerHTML = `<div class="summary-grid">
+        <div class="summary-card summary-card-sm"><div class="summary-icon green"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M8 12l3 3 5-5"/></svg></div><div class="summary-data"><span class="summary-value">${stats.total_runs || 0}</span><span class="summary-label">Total Runs</span></div></div>
+        <div class="summary-card summary-card-sm"><div class="summary-icon blue"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="summary-data"><span class="summary-value">${(stats.total_carbon_kg || 0).toFixed(1)}</span><span class="summary-label">Total Carbon (kg)</span></div></div>
+        <div class="summary-card summary-card-sm"><div class="summary-icon orange"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="summary-data"><span class="summary-value">${(stats.avg_carbon_kg || 0).toFixed(1)}</span><span class="summary-label">Avg per Run (kg)</span></div></div>
+        <div class="summary-card summary-card-sm"><div class="summary-icon purple"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div><div class="summary-data"><span class="summary-value">#${stats.best_run_id || '—'}</span><span class="summary-label">Best Run</span></div></div>
+    </div>`;
+}
+
+/* ── History with Cost Trend ─────────────────────────── */
+async function loadHistory() {
+    try {
+        const r = await fetch('/history'); const d = await r.json();
+        const c = document.getElementById('historyList');
+        if (!d.runs.length) { c.innerHTML = '<p class="hint">No runs yet. Run an optimisation to see history here.</p>'; return; }
+        c.innerHTML = d.runs.map(run => `
+            <div class="history-item" onclick="viewHistoryRun(${run.id})">
+                <div class="history-meta"><span class="history-id">#${run.id}</span><span class="history-scenario">${run.scenario_id}</span><span class="history-time">${run.created_at||'—'}</span></div>
+                <div class="history-notes">${(JSON.parse(run.notes)||[]).map(n=>`<span class="history-note">${n.substring(0,60)}...</span>`).join('')}</div>
+            </div>`).join('');
+        // Also load cost trend
+        loadCostTrend();
+    } catch {}
+}

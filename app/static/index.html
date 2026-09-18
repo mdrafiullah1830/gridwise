@@ -66,11 +66,35 @@
                         <div class="table-header"><label>Hourly Data</label><div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="randomiseHourlyData()">Randomise</button><button class="btn btn-ghost btn-sm" onclick="clearHourlyData()">Clear</button></div></div>
                         <div class="table-wrapper scrollable"><table class="data-table"><thead><tr><th>Hr</th><th>Demand (kWh)</th><th>Solar (kWh)</th><th>Tariff (BDT)</th></tr></thead><tbody id="hourlyBody"></tbody></table></div>
                     </div>
+                    <!-- Tariff Tiers Config (v4.0) -->
+                    <div class="input-group full-width">
+                        <label class="toggle-label"><input type="checkbox" id="tariffEnabled" class="toggle-input"> Time-of-Use Tariff Tiers</label>
+                        <div class="tier-config" id="tariffConfig" style="display:none;">
+                            <div class="input-grid compact">
+                                <div class="input-group"><label>Peak Hours</label><input type="text" class="input" id="tariffPeakHours" value="18-22" placeholder="e.g. 18-22"></div>
+                                <div class="input-group"><label>Peak Multiplier</label><input type="number" class="input" id="tariffPeakMult" value="2.0" step="0.1" min="0.1"></div>
+                                <div class="input-group"><label>Shoulder Hours</label><input type="text" class="input" id="tariffShoulderHours" value="8-17" placeholder="e.g. 8-17"></div>
+                                <div class="input-group"><label>Shoulder Multiplier</label><input type="number" class="input" id="tariffShoulderMult" value="1.0" step="0.1" min="0.1"></div>
+                                <div class="input-group"><label>Off-Peak Hours</label><input type="text" class="input" id="tariffOffPeakHours" value="0-6,23" placeholder="e.g. 0-6,23"></div>
+                                <div class="input-group"><label>Off-Peak Multiplier</label><input type="number" class="input" id="tariffOffPeakMult" value="0.5" step="0.1" min="0.1"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Battery Degradation Config (v4.0) -->
+                    <div class="input-group full-width">
+                        <label class="toggle-label"><input type="checkbox" id="degradationEnabled" class="toggle-input"> Battery Degradation Model</label>
+                        <div class="tier-config" id="degradationConfig" style="display:none;">
+                            <div class="input-grid compact">
+                                <div class="input-group"><label>Cost per Cycle (BDT)</label><input type="number" class="input" id="degradationCost" value="0.5" step="0.1" min="0"></div>
+                                <div class="input-group"><label>Max Cycles</label><input type="number" class="input" id="degradationMaxCycles" value="3000" min="100"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="card-footer">
-                    <button class="btn btn-primary btn-lg" id="optimizeBtn" onclick="runOptimization()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span id="optimizeBtnText">Optimise Schedule</span></button>
+                    <button class="btn btn-primary btn-lg" id="optimizeBtn" onclick="runOptimizationWS()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span id="optimizeBtnText">Optimise Schedule</span></button>
                     <button class="btn btn-secondary" onclick="runBaseline()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Baseline Comparison</button>
-                    <span class="footer-hint">LLM interprets notes → Guardrails validate → MILP optimises</span>
+                    <span class="footer-hint">LLM interprets notes → Guardrails validate → MILP optimises · <kbd>Ctrl+Enter</kbd></span>
                 </div>
             </section>
             <section class="results-section" id="resultsSection" style="display:none;"></section>
@@ -117,6 +141,7 @@
                 </div>
                 <div class="card-footer"><button class="btn btn-primary" onclick="runCarbon()">Run Carbon Optimisation</button></div>
             </section>
+            <section id="carbonStatsSection"></section>
             <section class="carbon-results" id="carbonResults" style="display:none;"></section>
         </div>
 
@@ -126,6 +151,7 @@
                 <div class="card-header"><h2>Run History</h2><button class="btn btn-ghost btn-sm" onclick="loadHistory()">Refresh</button></div>
                 <div id="historyList" class="history-list"><p class="hint">No runs yet. Run an optimisation to see history here.</p></div>
             </section>
+            <section id="costTrendSection"></section>
         </div>
 
         <!-- ===== TAB: DEMO ===== -->

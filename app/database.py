@@ -34,12 +34,19 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             response    TEXT    NOT NULL,
             baseline    TEXT,
             elapsed_ms  REAL,
+            total_carbon_kg REAL DEFAULT 0,
             created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_runs_scenario ON runs(scenario_id);
         CREATE INDEX IF NOT EXISTS idx_runs_created  ON runs(created_at DESC);
         """
     )
+    # Migration: add total_carbon_kg column if missing
+    try:
+        conn.execute("SELECT total_carbon_kg FROM runs LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE runs ADD COLUMN total_carbon_kg REAL DEFAULT 0")
+        conn.commit()
 
 
 def save_run(
@@ -48,11 +55,12 @@ def save_run(
     response: dict,
     baseline: dict | None = None,
     elapsed_ms: float | None = None,
+    total_carbon_kg: float = 0.0,
 ) -> int:
     conn = _get_conn()
     cur = conn.execute(
-        "INSERT INTO runs (scenario_id, notes, response, baseline, elapsed_ms) VALUES (?, ?, ?, ?, ?)",
-        (scenario_id, json.dumps(notes), json.dumps(response), json.dumps(baseline) if baseline else None, elapsed_ms),
+        "INSERT INTO runs (scenario_id, notes, response, baseline, elapsed_ms, total_carbon_kg) VALUES (?, ?, ?, ?, ?, ?)",
+        (scenario_id, json.dumps(notes), json.dumps(response), json.dumps(baseline) if baseline else None, elapsed_ms, total_carbon_kg),
     )
     conn.commit()
     run_id = cur.lastrowid
@@ -94,3 +102,55 @@ def get_stats() -> dict:
         "SELECT COUNT(*) as total_runs, MIN(created_at) as first_run, MAX(created_at) as last_run FROM runs"
     ).fetchone()
     return dict(row) if row else {"total_runs": 0, "first_run": None, "last_run": None}
+
+
+def get_cost_trend(limit: int = 50, scenario_id: str | None = None) -> list[dict]:
+    """Return cost trend data for historical runs."""
+    conn = _get_conn()
+    if scenario_id:
+        rows = conn.execute(
+            "SELECT id, scenario_id, response, total_carbon_kg, created_at FROM runs WHERE scenario_id = ? ORDER BY created_at DESC LIMIT ?",
+            (scenario_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, scenario_id, response, total_carbon_kg, created_at FROM runs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    trend = []
+    for r in rows:
+        resp = json.loads(r["response"]) if r["response"] else {}
+        trend.append({
+            "run_id": r["id"],
+            "scenario_id": r["scenario_id"],
+            "total_cost_bdt": resp.get("total_cost_bdt", 0),
+            "total_grid_kwh": resp.get("total_grid_kwh", 0),
+            "total_carbon_kg": r["total_carbon_kg"] or resp.get("total_carbon_kg", 0),
+            "created_at": r["created_at"],
+        })
+    return list(reversed(trend))  # oldest first for charting
+
+
+def get_carbon_stats() -> dict:
+    """Return aggregate carbon statistics across all runs."""
+    conn = _get_conn()
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) as total_runs,
+            COALESCE(SUM(total_carbon_kg), 0) as total_carbon_kg,
+            COALESCE(AVG(total_carbon_kg), 0) as avg_carbon_kg,
+            COALESCE(MAX(total_carbon_kg), 0) as best_carbon_saving_kg
+        FROM runs WHERE total_carbon_kg > 0
+        """
+    ).fetchone()
+    best = conn.execute(
+        "SELECT id FROM runs WHERE total_carbon_kg > 0 ORDER BY total_carbon_kg DESC LIMIT 1"
+    ).fetchone()
+    return {
+        "total_runs": row["total_runs"] if row else 0,
+        "total_carbon_kg": round(row["total_carbon_kg"], 2) if row else 0,
+        "avg_carbon_kg": round(row["avg_carbon_kg"], 2) if row else 0,
+        "best_run_id": best["id"] if best else None,
+        "best_carbon_saving_kg": round(row["best_carbon_saving_kg"], 2) if row else 0,
+    }

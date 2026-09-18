@@ -379,3 +379,144 @@ kbd {
 
 /* ── Compact Inputs ─────────────────────────────────────── */
 .input-grid.compact { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+/* ════════════════════════════════════════════════════════════
+   v4.0 STYLES
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Alert Panel ──────────────────────────────────────── */
+.alert-panel {
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+}
+.alert-critical {
+    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.08));
+    border-color: rgba(239,68,68,0.3);
+}
+.alert-warning {
+    background: linear-gradient(135deg, rgba(251,191,36,0.15), rgba(245,158,11,0.08));
+    border-color: rgba(251,191,36,0.3);
+}
+.alert-clean {
+    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(16,185,129,0.06));
+    border-color: rgba(34,197,94,0.3);
+}
+.alert-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+.alert-critical .alert-header svg { color: #ef4444; }
+.alert-warning .alert-header svg { color: #f59e0b; }
+.alert-clean .alert-header svg { color: #22c55e; }
+.alert-badges {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.alert-badge {
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.alert-high { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.alert-medium { background: rgba(251,191,36,0.2); color: #fcd34d; }
+.alert-low { background: rgba(148,163,184,0.2); color: #94a3b8; }
+.alert-list {
+    margin-top: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+}
+.alert-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.alert-hour {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.alert-critical .alert-hour { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.alert-warning .alert-hour { background: rgba(251,191,36,0.2); color: #fcd34d; }
+.alert-low .alert-hour { background: rgba(148,163,184,0.15); color: #94a3b8; }
+.alert-more {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-top: 6px;
+}
+
+/* ── Toggle Switch ────────────────────────────────────── */
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    padding: 8px 0;
+}
+.toggle-input {
+    appearance: none;
+    width: 40px;
+    height: 22px;
+    background: var(--bg-input);
+    border-radius: 11px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid var(--border);
+}
+.toggle-input::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all 0.2s;
+}
+.toggle-input:checked {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+.toggle-input:checked::after {
+    left: 20px;
+    background: #fff;
+}
+
+/* ── Tier Config ──────────────────────────────────────── */
+.tier-config {
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    margin-top: 8px;
+}
+
+/* ── Summary Card Small ───────────────────────────────── */
+.summary-card-sm {
+    padding: 12px 16px !important;
+}
+.summary-card-sm .summary-value {
+    font-size: 18px !important;
+}
+
+/* ── Summary Card Colors ──────────────────────────────── */
+.summary-icon.teal { background: rgba(20,184,166,0.15); color: #2dd4bf; }
+.summary-icon.red { background: rgba(239,68,68,0.15); color: #f87171; }

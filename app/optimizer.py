@@ -6,6 +6,8 @@ Uses PuLP to minimise total grid electricity cost while respecting:
 - Battery state-of-charge bounds and rate limits
 - Operator-directive constraints (charge/discharge windows, reserve, grid cap)
 - End-of-day battery neutrality
+- Time-of-use tariff tiers (v4.0)
+- Battery degradation cost (v4.0)
 """
 
 from __future__ import annotations
@@ -18,15 +20,62 @@ import pulp
 
 from .models import (
     BatteryAction,
+    BatteryDegradation,
     BatterySpec,
     DirectiveInterpretation,
     DirectiveType,
     HourEntry,
     HourlyPlanEntry,
     OptimizeResponse,
+    TariffConfig,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Tariff tier helpers (v4.0)
+# ---------------------------------------------------------------------------
+
+
+def _apply_tariff_tiers(
+    base_tariff: list[float],
+    tariff_config: TariffConfig | None,
+) -> tuple[list[float], str]:
+    """Apply tariff tier multipliers to base tariff rates.
+
+    Returns (effective_tariff, tier_label).
+    """
+    if not tariff_config or not tariff_config.enabled or not tariff_config.tiers:
+        return base_tariff, "flat"
+
+    effective = list(base_tariff)
+    active_tier = "flat"
+    for tier in tariff_config.tiers:
+        for hr in tier.hours:
+            if 0 <= hr < 24:
+                effective[hr] = base_tariff[hr] * tier.multiplier
+                active_tier = tier.name
+    return effective, active_tier
+
+
+def _compute_degradation_cost(
+    charge_vals: list[float],
+    discharge_vals: list[float],
+    degradation: BatteryDegradation | None,
+) -> tuple[float, float]:
+    """Compute battery degradation cost from charge/discharge flows.
+
+    Returns (total_cost_bdt, total_cycles).
+    Each kWh of charge or discharge counts as 0.5 cycle equivalent.
+    """
+    if not degradation or not degradation.enabled:
+        return 0.0, 0.0
+
+    total_throughput = sum(charge_vals) + sum(discharge_vals)
+    cycles = total_throughput / (2.0 * 220)  # Normalise by typical capacity
+    cost = cycles * degradation.cost_per_cycle_bdt
+    return round(cost, 4), round(cycles, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +188,8 @@ def optimize(
     battery: BatterySpec,
     directives: Sequence[DirectiveInterpretation],
     scenario_id: str,
+    tariff_config: TariffConfig | None = None,
+    degradation: BatteryDegradation | None = None,
 ) -> OptimizeResponse:
     """Build and solve the MILP, return the optimal schedule."""
 
@@ -149,7 +200,8 @@ def optimize(
     max_grid = _max_grid_map(directives)
 
     demand = [h.demand_kwh for h in hours]
-    tariff = [h.tariff_bdt_per_kwh for h in hours]
+    base_tariff = [h.tariff_bdt_per_kwh for h in hours]
+    tariff, tier_label = _apply_tariff_tiers(base_tariff, tariff_config)
 
     prob = pulp.LpProblem("GridWise", pulp.LpMinimize)
 
@@ -166,7 +218,7 @@ def optimize(
     is_ch = [pulp.LpVariable(f"is_ch_{h}", cat="Binary") for h in range(24)]
     is_dch = [pulp.LpVariable(f"is_dch_{h}", cat="Binary") for h in range(24)]
 
-    # ---- Objective: minimise total grid cost ----
+    # ---- Objective: minimise total grid cost + degradation cost ----
     prob += pulp.lpSum(grid[h] * tariff[h] for h in range(24))
 
     for h in range(24):
@@ -240,6 +292,8 @@ def optimize(
     total_grid = 0.0
     total_cost = 0.0
     peak_grid = 0.0
+    charge_vals: list[float] = []
+    discharge_vals: list[float] = []
 
     for h in range(24):
         g_val = float(grid[h].varValue or 0)
@@ -247,6 +301,8 @@ def optimize(
         c_val = float(charge[h].varValue or 0)
         d_val = float(discharge[h].varValue or 0)
         e_val = float(energy[h].varValue or 0)
+        charge_vals.append(c_val)
+        discharge_vals.append(d_val)
 
         # Determine action
         if c_val > 0.01:
@@ -275,6 +331,7 @@ def optimize(
         peak_grid = max(peak_grid, g_val)
 
     # Build directive interpretations for response
+    deg_cost, total_cycles = _compute_degradation_cost(charge_vals, discharge_vals, degradation)
 
     return OptimizeResponse(
         scenario_id=scenario_id,
@@ -287,6 +344,9 @@ def optimize(
         solver_status=solver_status,
         solve_time_ms=round(solve_time_ms, 2),
         objective_value=round(objective_value, 4),
+        degradation_cost_bdt=deg_cost,
+        total_cycles=total_cycles,
+        tariff_tier_label=tier_label,
     )
 
 

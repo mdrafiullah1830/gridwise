@@ -25,6 +25,12 @@ class BatteryAction(str, Enum):
     IDLE = "idle"
 
 
+class ViolationSeverity(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -116,10 +122,15 @@ class OptimizeResponse(BaseModel):
     total_cost_bdt: float
     peak_grid_kwh: float
     plan_summary: str
-    # Optimizer diagnostics (added in v2.1)
     solver_status: str = "Optimal"
     solve_time_ms: float = 0.0
     objective_value: float = 0.0
+    # v4.0 features
+    violations: list[Violation] = Field(default_factory=list)
+    violation_summary: dict = Field(default_factory=dict)
+    degradation_cost_bdt: float = 0.0
+    total_cycles: float = 0.0
+    tariff_tier_label: str = "flat"
 
 
 class BaselineResponse(BaseModel):
@@ -222,3 +233,67 @@ class ScenarioTemplate(BaseModel):
     notes: list[str]
     battery: BatterySpec
     hours: list[HourEntry]
+
+
+# ---------------------------------------------------------------------------
+# Violation model (v4.0)
+# ---------------------------------------------------------------------------
+
+class Violation(BaseModel):
+    hour: int = Field(ge=0, le=23)
+    violation_type: str
+    actual_value: float
+    expected_value: float
+    severity: ViolationSeverity
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# Tariff tier model (v4.0)
+# ---------------------------------------------------------------------------
+
+class TariffTier(BaseModel):
+    name: str
+    hours: list[int] = Field(min_length=1)
+    multiplier: float = Field(default=1.0, gt=0)
+
+
+class TariffConfig(BaseModel):
+    enabled: bool = False
+    tiers: list[TariffTier] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Battery degradation model (v4.0)
+# ---------------------------------------------------------------------------
+
+class BatteryDegradation(BaseModel):
+    enabled: bool = False
+    cost_per_cycle_bdt: float = Field(default=0.0, ge=0)
+    max_cycles: int = Field(default=3000, gt=0)
+
+
+# ---------------------------------------------------------------------------
+# Cost trend model (v4.0)
+# ---------------------------------------------------------------------------
+
+class CostTrendPoint(BaseModel):
+    run_id: int
+    scenario_id: str
+    total_cost_bdt: float
+    total_grid_kwh: float
+    total_carbon_kg: float | None = None
+    created_at: str
+
+
+# ---------------------------------------------------------------------------
+# Carbon stats model (v4.0)
+# ---------------------------------------------------------------------------
+
+class CarbonStats(BaseModel):
+    total_runs: int = 0
+    total_carbon_kg: float = 0.0
+    total_carbon_saved_kg: float = 0.0
+    avg_carbon_kg: float = 0.0
+    best_run_id: int | None = None
+    best_carbon_saving_kg: float = 0.0
