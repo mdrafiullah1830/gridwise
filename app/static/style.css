@@ -318,3 +318,64 @@ kbd {
 .results-section .card:nth-child(6) { animation-delay: 0.3s; }
 .results-section .card:nth-child(7) { animation-delay: 0.35s; }
 .results-section .card:nth-child(8) { animation-delay: 0.4s; }
+
+/* ── Navigation Tabs ────────────────────────────────────── */
+.nav-tabs { display: flex; gap: 4px; background: var(--bg-input); border-radius: var(--radius-sm); padding: 3px; border: 1px solid var(--border); }
+.nav-tab {
+    padding: 7px 16px; border: none; border-radius: 6px; background: transparent;
+    color: var(--text-muted); font-family: var(--font); font-size: 0.82rem; font-weight: 500;
+    cursor: pointer; transition: all var(--transition); white-space: nowrap;
+}
+.nav-tab:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+.nav-tab.active { color: #fff; background: var(--gradient); font-weight: 600; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── Compare Slots ──────────────────────────────────────── */
+.compare-slot { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 12px; }
+.compare-slot-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.compare-slot-header strong { flex: 1; font-size: 0.9rem; }
+.compare-slot .input-grid.compact { gap: 10px; }
+.compare-slot .input { padding: 7px 10px; font-size: 0.82rem; }
+.best-row { background: rgba(52,211,153,0.08) !important; }
+.best-row td { font-weight: 600; }
+
+/* ── History List ───────────────────────────────────────── */
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item { display: flex; flex-direction: column; gap: 6px; padding: 14px 18px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: all var(--transition); }
+.history-item:hover { border-color: var(--accent-blue); background: var(--bg-input-focus); transform: translateX(4px); }
+.history-meta { display: flex; align-items: center; gap: 12px; font-size: 0.82rem; }
+.history-id { font-family: var(--mono); font-weight: 700; color: var(--accent-blue); }
+.history-scenario { font-weight: 600; color: var(--text-primary); }
+.history-time { color: var(--text-muted); margin-left: auto; font-size: 0.75rem; }
+.history-notes { display: flex; flex-wrap: wrap; gap: 6px; }
+.history-note { font-size: 0.78rem; color: var(--text-secondary); background: var(--bg-card); padding: 3px 8px; border-radius: 4px; }
+
+/* ── Demo Mode ──────────────────────────────────────────── */
+.demo-controls { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.demo-progress { display: flex; align-items: center; gap: 12px; flex: 1; }
+.demo-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; position: relative; }
+.demo-bar::after { content: ''; position: absolute; inset: 0; background: var(--gradient); border-radius: 3px; width: 0%; transition: width 0.5s ease; }
+.demo-progress .demo-bar { position: relative; }
+#demoBar { width: 0%; height: 100%; background: var(--gradient); border-radius: 3px; transition: width 0.5s ease; }
+#demoStatus { font-size: 0.82rem; color: var(--text-secondary); white-space: nowrap; }
+.demo-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.demo-card { padding: 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); animation: fadeInUp 0.3s ease-out both; }
+.demo-card.error { border-color: var(--accent-red); opacity: 0.7; }
+.demo-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.demo-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; background: rgba(96,165,250,0.15); color: var(--accent-blue); }
+.demo-cost { font-family: var(--mono); font-weight: 700; color: var(--accent-green); margin-left: auto; }
+.demo-grid { font-size: 0.78rem; color: var(--text-muted); }
+.demo-notes { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.4; }
+
+/* ── Compare Results ────────────────────────────────────── */
+.compare-results .card { margin-top: 16px; }
+
+/* ── What-If Results ────────────────────────────────────── */
+.whatif-results .card { margin-top: 16px; }
+
+/* ── Carbon Results ─────────────────────────────────────── */
+.carbon-results .summary-grid { margin-top: 16px; }
+
+/* ── Compact Inputs ─────────────────────────────────────── */
+.input-grid.compact { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }

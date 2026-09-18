@@ -116,3 +116,109 @@ class OptimizeResponse(BaseModel):
     total_cost_bdt: float
     peak_grid_kwh: float
     plan_summary: str
+    # Optimizer diagnostics (added in v2.1)
+    solver_status: str = "Optimal"
+    solve_time_ms: float = 0.0
+    objective_value: float = 0.0
+
+
+class BaselineResponse(BaseModel):
+    """Response from POST /optimize-energy/baseline.
+
+    Compares the directive-driven schedule against the no-directive baseline.
+    """
+    scenario_id: str
+    baseline_cost_bdt: float
+    optimised_cost_bdt: float
+    savings_bdt: float
+    savings_pct: float
+    baseline_grid_kwh: float
+    optimised_grid_kwh: float
+    baseline_peak_grid_kwh: float
+    optimised_peak_grid_kwh: float
+    baseline_plan: list[HourlyPlanEntry] = Field(min_length=24, max_length=24)
+    optimised_plan: list[HourlyPlanEntry] = Field(min_length=24, max_length=24)
+    solver_status: str = "Optimal"
+    solve_time_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Comparison models
+# ---------------------------------------------------------------------------
+
+class CompareRequest(BaseModel):
+    scenarios: list[OptimizeRequest] = Field(min_length=2, max_length=5)
+
+
+class ScenarioSummary(BaseModel):
+    scenario_id: str
+    total_cost_bdt: float
+    total_grid_kwh: float
+    peak_grid_kwh: float
+    savings_bdt: float = 0.0
+    savings_pct: float = 0.0
+    hourly_plan: list[HourlyPlanEntry]
+    directive_count: int = 0
+
+
+class CompareResponse(BaseModel):
+    scenarios: list[ScenarioSummary]
+    best_scenario_id: str
+    cost_difference_bdt: float
+
+
+# ---------------------------------------------------------------------------
+# What-if models
+# ---------------------------------------------------------------------------
+
+class WhatIfRequest(BaseModel):
+    scenario_id: str = "WHAT-IF"
+    operator_notes: list[str] = Field(min_length=1, max_length=3)
+    hours: list[HourEntry] = Field(min_length=24, max_length=24)
+    battery: BatterySpec
+    param: str = Field(min_length=1)
+    values: list[float] = Field(min_length=2, max_length=10)
+
+
+class WhatIfPoint(BaseModel):
+    value: float
+    total_cost_bdt: float
+    total_grid_kwh: float
+    peak_grid_kwh: float
+
+
+class WhatIfResponse(BaseModel):
+    scenario_id: str
+    param: str
+    points: list[WhatIfPoint]
+    baseline_cost_bdt: float
+
+
+# ---------------------------------------------------------------------------
+# Carbon models
+# ---------------------------------------------------------------------------
+
+class CarbonOptimizeRequest(OptimizeRequest):
+    carbon_factor_kg_per_kwh: float = Field(default=0.5, ge=0)
+    cost_weight: float = Field(default=0.7, ge=0, le=1)
+    carbon_weight: float = Field(default=0.3, ge=0, le=1)
+
+
+class CarbonOptimizeResponse(OptimizeResponse):
+    total_carbon_kg: float = 0.0
+    baseline_carbon_kg: float = 0.0
+    carbon_savings_kg: float = 0.0
+    weighted_objective: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Template models
+# ---------------------------------------------------------------------------
+
+class ScenarioTemplate(BaseModel):
+    id: str
+    name: str
+    description: str
+    notes: list[str]
+    battery: BatterySpec
+    hours: list[HourEntry]

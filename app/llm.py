@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -21,6 +22,10 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Match a balanced JSON array (best-effort, used only as a fallback when
+# ``json.loads`` fails on a slightly malformed LLM payload).
+_JSON_ARRAY_RE = re.compile(r"\[\s*\{.*\}\s*\]", re.DOTALL)
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -82,7 +87,11 @@ Rules:
 
 
 async def interpret_notes(operator_notes: list[str]) -> list[dict[str, Any]]:
-    """Call the LLM and return raw directive interpretation dicts."""
+    """Call the LLM and return raw directive interpretation dicts.
+
+    Retries once on transient JSON-parse failure and attempts lightweight
+    repair (fence stripping + array extraction) before giving up.
+    """
     settings = get_settings()
 
     user_content = "Interpret these operator notes:\n\n"
@@ -104,29 +113,81 @@ async def interpret_notes(operator_notes: list[str]) -> list[dict[str, Any]]:
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
-        resp = await client.post(
-            f"{settings.llm_base_url}/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-        resp.raise_for_status()
+    last_error: Exception | None = None
+    raw_text: str = ""
+    for attempt in (1, 2):
+        try:
+            async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
+                resp = await client.post(
+                    f"{settings.llm_base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                resp.raise_for_status()
 
-    data = resp.json()
-    raw_text: str = data["choices"][0]["message"]["content"].strip()
+            data = resp.json()
+            raw_text = data["choices"][0]["message"]["content"].strip()
 
-    # Strip markdown fences if present
-    if raw_text.startswith("```"):
-        lines = raw_text.splitlines()
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        raw_text = "\n".join(lines)
+            try:
+                parsed = _try_parse_json_array(raw_text)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                logger.warning(
+                    "LLM returned malformed JSON on attempt %d: %s",
+                    attempt,
+                    exc,
+                )
+                continue
 
-    parsed = json.loads(raw_text)
+            if not isinstance(parsed, list):
+                raise TypeError(
+                    f"LLM returned {type(parsed).__name__}, expected list"
+                )
 
-    if not isinstance(parsed, list):
-        raise TypeError(f"LLM returned {type(parsed).__name__}, expected list")
+            return parsed  # type: ignore[no-any-return]
+        except (httpx.HTTPError, KeyError, IndexError) as exc:
+            last_error = exc
+            logger.warning(
+                "LLM call failed on attempt %d: %s", attempt, exc
+            )
+            if attempt == 2:
+                raise
 
-    return parsed  # type: ignore[no-any-return]
+    raise ValueError(
+        f"LLM returned invalid JSON after 2 attempts: {last_error}. "
+        f"Last payload: {raw_text[:200]!r}"
+    )
+
+
+def _try_parse_json_array(raw_text: str) -> Any:
+    """Parse ``raw_text`` as a JSON array, with two repair fallbacks."""
+    cleaned = raw_text.strip()
+
+    # Strip markdown fences (```json ... ``` or ``` ... ```)
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        lines = [
+            l for l in lines if not l.strip().startswith("```")
+        ]
+        cleaned = "\n".join(lines).strip()
+
+    # Fast path: valid JSON
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Repair path 1: grab the first JSON array substring
+    match = _JSON_ARRAY_RE.search(cleaned)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    # Repair path 2: drop trailing commas before } or ]
+    repaired = re.sub(r",(\s*[}\]])", r"\1", cleaned)
+    return json.loads(repaired)
 
 
 # ---------------------------------------------------------------------------

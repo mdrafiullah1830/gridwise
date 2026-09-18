@@ -7,333 +7,165 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Ambient background -->
-    <div class="ambient-bg">
-        <div class="orb orb-1"></div>
-        <div class="orb orb-2"></div>
-        <div class="orb orb-3"></div>
-    </div>
-
-    <!-- Toast container -->
+    <div class="ambient-bg"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
     <div id="toastContainer" class="toast-container"></div>
 
-    <!-- Header -->
     <header class="header">
         <div class="header-inner">
             <div class="logo">
-                <div class="logo-icon">
-                    <svg viewBox="0 0 32 32" fill="none">
-                        <rect x="2" y="2" width="28" height="28" rx="6" stroke="url(#grad)" stroke-width="2"/>
-                        <path d="M10 22V14l6-4 6 4v8" stroke="url(#grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <circle cx="16" cy="17" r="2" fill="url(#grad)"/>
-                        <defs><linearGradient id="grad" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>
-                    </svg>
-                </div>
-                <div>
-                    <h1>GridWise</h1>
-                    <span class="tagline">Smart Campus Energy Optimisation</span>
-                </div>
+                <div class="logo-icon"><svg viewBox="0 0 32 32" fill="none"><rect x="2" y="2" width="28" height="28" rx="6" stroke="url(#grad)" stroke-width="2"/><path d="M10 22V14l6-4 6 4v8" stroke="url(#grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="17" r="2" fill="url(#grad)"/><defs><linearGradient id="grad" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs></svg></div>
+                <div><h1>GridWise</h1><span class="tagline">Smart Campus Energy Optimisation</span></div>
             </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" onclick="switchTab('optimise')">Optimise</button>
+                <button class="nav-tab" onclick="switchTab('compare')">Compare</button>
+                <button class="nav-tab" onclick="switchTab('whatif')">What-If</button>
+                <button class="nav-tab" onclick="switchTab('carbon')">Carbon</button>
+                <button class="nav-tab" onclick="switchTab('history')">History</button>
+                <button class="nav-tab" onclick="switchTab('demo')">Live Demo</button>
+            </nav>
             <div class="header-actions">
-                <div class="status-badge" id="statusBadge">
-                    <span class="status-dot"></span>
-                    <span>Checking...</span>
-                </div>
-                <button class="btn btn-ghost" onclick="showShortcuts()" title="Keyboard Shortcuts">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
-                </button>
-                <button class="btn btn-ghost" onclick="exportJSON()" title="Export Response (Ctrl+E)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                </button>
-                <button class="btn btn-ghost" id="themeToggle" onclick="toggleTheme()" title="Toggle Theme (T)">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                </button>
+                <div class="status-badge" id="statusBadge"><span class="status-dot"></span><span>Checking...</span></div>
+                <button class="btn btn-ghost" onclick="showShortcuts()" title="Shortcuts (?)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg></button>
+                <button class="btn btn-ghost" onclick="toggleTheme()" title="Theme (T)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/></svg></button>
             </div>
         </div>
     </header>
 
     <main class="main">
-        <!-- Input Section -->
-        <section class="card input-section">
-            <div class="card-header">
-                <h2>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    Scenario Input
-                </h2>
-                <div class="card-actions">
-                    <select id="sampleSelect" class="select">
-                        <option value="">Select a sample case...</option>
-                    </select>
-                    <button class="btn btn-secondary btn-sm" onclick="randomScenario()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
-                        Random
-                    </button>
-                </div>
-            </div>
-
-            <div class="input-grid">
-                <!-- Operator Notes -->
-                <div class="input-group full-width">
-                    <label>Operator Notes <span class="hint">(1-3 natural language instructions)</span></label>
-                    <div id="notesContainer">
-                        <div class="note-row">
-                            <span class="note-index">0</span>
-                            <input type="text" class="input" placeholder="e.g. Solar panels will be washed from noon until 2 PM..." data-note="0">
-                            <button class="btn btn-icon btn-danger" onclick="removeNote(this)" title="Remove (Del)">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary btn-sm" onclick="addNote()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Add Note
-                    </button>
-                </div>
-
-                <!-- Scenario ID -->
-                <div class="input-group">
-                    <label>Scenario ID</label>
-                    <input type="text" class="input" id="scenarioId" value="SCENARIO-001" placeholder="SCENARIO-001">
-                </div>
-
-                <!-- Battery Config -->
-                <div class="input-group">
-                    <label>Battery Capacity (kWh)</label>
-                    <input type="number" class="input" id="batteryCapacity" value="220" min="1">
-                </div>
-                <div class="input-group">
-                    <label>Initial Energy (kWh)</label>
-                    <input type="number" class="input" id="batteryInitial" value="110" min="0">
-                </div>
-                <div class="input-group">
-                    <label>Min Reserve (kWh)</label>
-                    <input type="number" class="input" id="batteryMin" value="40" min="0">
-                </div>
-                <div class="input-group">
-                    <label>Max Charge Rate (kWh/h)</label>
-                    <input type="number" class="input" id="batteryChargeRate" value="50" min="1">
-                </div>
-                <div class="input-group">
-                    <label>Max Discharge Rate (kWh/h)</label>
-                    <input type="number" class="input" id="batteryDischargeRate" value="50" min="1">
-                </div>
-
-                <!-- Hourly Data -->
-                <div class="input-group full-width">
-                    <div class="table-header">
-                        <label>Hourly Data <span class="hint">(24 entries — demand, solar, tariff)</span></label>
-                        <div class="table-actions">
-                            <button class="btn btn-ghost btn-sm" onclick="randomiseHourlyData()" title="Randomise Data">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
-                            </button>
-                            <button class="btn btn-ghost btn-sm" onclick="clearHourlyData()" title="Clear All">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="table-wrapper scrollable">
-                        <table class="data-table" id="hourlyTable">
-                            <thead>
-                                <tr>
-                                    <th>Hr</th>
-                                    <th>Demand (kWh)</th>
-                                    <th>Solar (kWh)</th>
-                                    <th>Tariff (BDT)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="hourlyBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card-footer">
-                <button class="btn btn-primary btn-lg" id="optimizeBtn" onclick="runOptimization()">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    <span id="optimizeBtnText">Optimise Schedule</span>
-                </button>
-                <span class="footer-hint">LLM interprets notes → Guardrails validate → MILP optimises</span>
-            </div>
-        </section>
-
-        <!-- Results Section -->
-        <section class="results-section" id="resultsSection" style="display:none;">
-            <!-- Summary Cards -->
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <div class="summary-icon blue">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-                    </div>
-                    <div class="summary-data">
-                        <span class="summary-value" id="totalCost">—</span>
-                        <span class="summary-label">Total Cost (BDT)</span>
-                    </div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-icon green">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                    </div>
-                    <div class="summary-data">
-                        <span class="summary-value" id="totalGrid">—</span>
-                        <span class="summary-label">Grid Total (kWh)</span>
-                    </div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-icon orange">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                    </div>
-                    <div class="summary-data">
-                        <span class="summary-value" id="peakGrid">—</span>
-                        <span class="summary-label">Peak Grid (kWh)</span>
-                    </div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-icon purple">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    </div>
-                    <div class="summary-data">
-                        <span class="summary-value" id="elapsedTime">—</span>
-                        <span class="summary-label">Elapsed (ms)</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Directive Interpretation -->
-            <div class="card">
+        <!-- ===== TAB: OPTIMISE ===== -->
+        <div class="tab-content active" id="tab-optimise">
+            <section class="card input-section">
                 <div class="card-header">
-                    <h2>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
-                        LLM Directive Interpretation
-                    </h2>
-                    <button class="btn btn-ghost btn-sm" onclick="copyDirectives()" title="Copy">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                    </button>
-                </div>
-                <div id="directiveList" class="directive-list"></div>
-            </div>
-
-            <!-- Charts -->
-            <div class="charts-grid">
-                <div class="card">
-                    <div class="card-header"><h2>Hourly Grid vs Solar Usage</h2></div>
-                    <div class="chart-container"><canvas id="gridSolarChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <div class="card-header"><h2>Battery State of Charge</h2></div>
-                    <div class="chart-container"><canvas id="batteryChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <div class="card-header"><h2>Cost per Hour</h2></div>
-                    <div class="chart-container"><canvas id="costChart"></canvas></div>
-                </div>
-                <div class="card">
-                    <div class="card-header"><h2>Tariff vs Battery Action</h2></div>
-                    <div class="chart-container"><canvas id="tariffChart"></canvas></div>
-                </div>
-            </div>
-
-            <!-- Hourly Schedule Table -->
-            <div class="card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                        24-Hour Schedule
-                    </h2>
-                    <button class="btn btn-ghost btn-sm" onclick="exportCSV()" title="Export CSV">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                        CSV
-                    </button>
-                </div>
-                <div class="table-wrapper scrollable">
-                    <table class="data-table schedule-table" id="scheduleTable">
-                        <thead>
-                            <tr>
-                                <th>Hr</th>
-                                <th>Grid</th>
-                                <th>Solar</th>
-                                <th>Action</th>
-                                <th>Batt kWh</th>
-                                <th>SOC</th>
-                                <th>Demand</th>
-                                <th>Tariff</th>
-                                <th>Cost</th>
-                            </tr>
-                        </thead>
-                        <tbody id="scheduleBody"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- JSON Response Viewer -->
-            <div class="card">
-                <div class="card-header">
-                    <h2>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                        Raw API Response
-                    </h2>
+                    <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Scenario Input</h2>
                     <div class="card-actions">
-                        <button class="btn btn-ghost btn-sm" onclick="copyJSON()" title="Copy JSON">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                            Copy
-                        </button>
-                        <button class="btn btn-ghost btn-sm" id="jsonToggle" onclick="toggleJSON()">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                            Show
-                        </button>
+                        <select id="sampleSelect" class="select"><option value="">Load sample case...</option></select>
+                        <select id="templateSelect" class="select" onchange="loadTemplate()"><option value="">Load template...</option></select>
+                        <button class="btn btn-secondary btn-sm" onclick="randomScenario()">Random</button>
                     </div>
                 </div>
-                <pre class="json-viewer" id="jsonViewer" style="display:none;"></pre>
-            </div>
+                <div class="input-grid">
+                    <div class="input-group full-width">
+                        <label>Operator Notes <span class="hint">(1-3 natural language instructions)</span></label>
+                        <div id="notesContainer">
+                            <div class="note-row"><span class="note-index">0</span><input type="text" class="input" placeholder="e.g. Solar panels will be washed from noon until 2 PM..." data-note="0"><button class="btn btn-icon btn-danger" onclick="removeNote(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="addNote()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Note</button>
+                    </div>
+                    <div class="input-group"><label>Scenario ID</label><input type="text" class="input" id="scenarioId" value="SCENARIO-001"></div>
+                    <div class="input-group"><label>Battery Capacity (kWh)</label><input type="number" class="input" id="batteryCapacity" value="220" min="1"></div>
+                    <div class="input-group"><label>Initial Energy (kWh)</label><input type="number" class="input" id="batteryInitial" value="110" min="0"></div>
+                    <div class="input-group"><label>Min Reserve (kWh)</label><input type="number" class="input" id="batteryMin" value="40" min="0"></div>
+                    <div class="input-group"><label>Max Charge (kWh/h)</label><input type="number" class="input" id="batteryChargeRate" value="50" min="1"></div>
+                    <div class="input-group"><label>Max Discharge (kWh/h)</label><input type="number" class="input" id="batteryDischargeRate" value="50" min="1"></div>
+                    <div class="input-group full-width">
+                        <div class="table-header"><label>Hourly Data</label><div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="randomiseHourlyData()">Randomise</button><button class="btn btn-ghost btn-sm" onclick="clearHourlyData()">Clear</button></div></div>
+                        <div class="table-wrapper scrollable"><table class="data-table"><thead><tr><th>Hr</th><th>Demand (kWh)</th><th>Solar (kWh)</th><th>Tariff (BDT)</th></tr></thead><tbody id="hourlyBody"></tbody></table></div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary btn-lg" id="optimizeBtn" onclick="runOptimization()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span id="optimizeBtnText">Optimise Schedule</span></button>
+                    <button class="btn btn-secondary" onclick="runBaseline()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Baseline Comparison</button>
+                    <span class="footer-hint">LLM interprets notes → Guardrails validate → MILP optimises</span>
+                </div>
+            </section>
+            <section class="results-section" id="resultsSection" style="display:none;"></section>
+        </div>
 
-            <!-- Plan Summary -->
-            <div class="card">
-                <div class="card-header"><h2>Plan Summary</h2></div>
-                <p class="plan-summary" id="planSummary"></p>
-            </div>
-        </section>
+        <!-- ===== TAB: COMPARE ===== -->
+        <div class="tab-content" id="tab-compare">
+            <section class="card">
+                <div class="card-header"><h2>Scenario Comparison</h2><span class="hint">Load 2-5 scenarios, run optimiser, compare results side-by-side</span></div>
+                <div id="compareScenarios"></div>
+                <div class="card-footer">
+                    <button class="btn btn-secondary btn-sm" onclick="addCompareSlot()">+ Add Scenario</button>
+                    <button class="btn btn-primary" onclick="runCompare()">Compare All</button>
+                </div>
+            </section>
+            <section class="compare-results" id="compareResults" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: WHAT-IF ===== -->
+        <div class="tab-content" id="tab-whatif">
+            <section class="card">
+                <div class="card-header"><h2>What-If Analysis</h2><span class="hint">Tweak one parameter across a range, see cost impact instantly</span></div>
+                <div class="input-grid">
+                    <div class="input-group"><label>Parameter</label><select id="whatIfParam" class="select"><option value="capacity_kwh">Battery Capacity (kWh)</option><option value="initial_energy_kwh">Initial Energy (kWh)</option><option value="minimum_energy_kwh">Min Reserve (kWh)</option><option value="max_charge_kwh_per_hour">Max Charge Rate</option><option value="max_discharge_kwh_per_hour">Max Discharge Rate</option></select></div>
+                    <div class="input-group"><label>From</label><input type="number" class="input" id="whatIfFrom" value="50"></div>
+                    <div class="input-group"><label>To</label><input type="number" class="input" id="whatIfTo" value="300"></div>
+                    <div class="input-group"><label>Steps</label><input type="number" class="input" id="whatIfSteps" value="6" min="2" max="10"></div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary" onclick="runWhatIf()">Run What-If Analysis</button>
+                </div>
+            </section>
+            <section class="whatif-results" id="whatIfResults" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: CARBON ===== -->
+        <div class="tab-content" id="tab-carbon">
+            <section class="card">
+                <div class="card-header"><h2>Carbon-Aware Optimisation</h2><span class="hint">Multi-objective: minimise weighted cost + carbon emissions</span></div>
+                <div class="input-grid">
+                    <div class="input-group"><label>Carbon Factor (kg CO₂/kWh)</label><input type="number" class="input" id="carbonFactor" value="0.5" step="0.1" min="0"></div>
+                    <div class="input-group"><label>Cost Weight</label><input type="number" class="input" id="costWeight" value="0.7" step="0.1" min="0" max="1"></div>
+                    <div class="input-group"><label>Carbon Weight</label><input type="number" class="input" id="carbonWeight" value="0.3" step="0.1" min="0" max="1"></div>
+                </div>
+                <div class="card-footer"><button class="btn btn-primary" onclick="runCarbon()">Run Carbon Optimisation</button></div>
+            </section>
+            <section class="carbon-results" id="carbonResults" style="display:none;"></section>
+        </div>
+
+        <!-- ===== TAB: HISTORY ===== -->
+        <div class="tab-content" id="tab-history">
+            <section class="card">
+                <div class="card-header"><h2>Run History</h2><button class="btn btn-ghost btn-sm" onclick="loadHistory()">Refresh</button></div>
+                <div id="historyList" class="history-list"><p class="hint">No runs yet. Run an optimisation to see history here.</p></div>
+            </section>
+        </div>
+
+        <!-- ===== TAB: DEMO ===== -->
+        <div class="tab-content" id="tab-demo">
+            <section class="card">
+                <div class="card-header"><h2>Live Demo — Auto-Run All Samples</h2><span class="hint">Runs all 10 sample cases sequentially with results</span></div>
+                <div class="demo-controls">
+                    <button class="btn btn-primary btn-lg" id="demoBtn" onclick="runDemo()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>Start Demo</button>
+                    <div class="demo-progress" id="demoProgress" style="display:none;"><div class="demo-bar" id="demoBar"></div><span id="demoStatus">Running...</span></div>
+                </div>
+                <div id="demoResults" class="demo-results"></div>
+            </section>
+        </div>
     </main>
 
     <!-- Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay" style="display:none;">
         <div class="loading-content">
             <div class="spinner"></div>
-            <p class="loading-text" id="loadingText">Interpreting operator notes with LLM...</p>
-            <p class="loading-subtext">Validating directives & optimising schedule</p>
-            <div class="loading-progress">
-                <div class="loading-bar" id="loadingBar"></div>
-            </div>
+            <p class="loading-text" id="loadingText">Processing...</p>
+            <p class="loading-subtext" id="loadingSubtext">Validating directives & optimising schedule</p>
+            <div class="loading-progress"><div class="loading-bar" id="loadingBar"></div></div>
         </div>
     </div>
 
-    <!-- Keyboard Shortcuts Modal -->
+    <!-- Shortcuts Modal -->
     <div class="modal-overlay" id="shortcutsModal" style="display:none;" onclick="if(event.target===this)closeShortcuts()">
         <div class="modal">
-            <div class="modal-header">
-                <h2>Keyboard Shortcuts</h2>
-                <button class="btn btn-icon" onclick="closeShortcuts()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
+            <div class="modal-header"><h2>Keyboard Shortcuts</h2><button class="btn btn-icon" onclick="closeShortcuts()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
             <div class="shortcuts-grid">
                 <div class="shortcut"><kbd>Ctrl</kbd><kbd>Enter</kbd><span>Run Optimisation</span></div>
                 <div class="shortcut"><kbd>T</kbd><span>Toggle Theme</span></div>
                 <div class="shortcut"><kbd>E</kbd><span>Export JSON</span></div>
-                <div class="shortcut"><kbd>S</kbd><span>Load Sample</span></div>
                 <div class="shortcut"><kbd>R</kbd><span>Random Scenario</span></div>
-                <div class="shortcut"><kbd>1</kbd>–<kbd>5</kbd><span>Load Sample 1-5</span></div>
+                <div class="shortcut"><kbd>1</kbd>–<kbd>6</kbd><span>Switch Tab</span></div>
                 <div class="shortcut"><kbd>Esc</kbd><span>Close Modal</span></div>
             </div>
         </div>
     </div>
 
-    <footer class="footer">
-        <p>GridWise v2.0 — BUP CSE Fest 2026 Hackathon · <kbd>?</kbd> for shortcuts</p>
-    </footer>
-
+    <footer class="footer"><p>GridWise v3.0 — BUP CSE Fest 2026 Hackathon · <kbd>?</kbd> for shortcuts</p></footer>
     <script src="/static/app.js"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ Uses PuLP to minimise total grid electricity cost while respecting:
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Sequence
 
 import pulp
@@ -152,6 +153,10 @@ def optimize(
 
     prob = pulp.LpProblem("GridWise", pulp.LpMinimize)
 
+    # Import settings lazily to avoid circular import at module load
+    from .config import get_settings
+    solver_timeout = get_settings().optimizer_timeout
+
     # ---- Decision variables ----
     grid = [pulp.LpVariable(f"grid_{h}", lowBound=0) for h in range(24)]
     solar_used = [pulp.LpVariable(f"solar_{h}", lowBound=0) for h in range(24)]
@@ -217,13 +222,18 @@ def optimize(
     )
 
     # ---- Solve ----
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=30)
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=solver_timeout)
+    t_solve_start = time.monotonic()
     status = prob.solve(solver)
+    solve_time_ms = (time.monotonic() - t_solve_start) * 1000.0
 
-    if pulp.LpStatus[status] != "Optimal":
+    solver_status = pulp.LpStatus[status]
+    if solver_status != "Optimal":
         raise RuntimeError(
-            f"Optimizer status: {pulp.LpStatus[status]}"
+            f"Optimizer status: {solver_status}"
         )
+
+    objective_value = float(pulp.value(prob.objective) or 0.0)
 
     # ---- Extract results ----
     hourly_plan: list[HourlyPlanEntry] = []
@@ -274,7 +284,129 @@ def optimize(
         total_cost_bdt=round(total_cost, 2),
         peak_grid_kwh=round(peak_grid, 2),
         plan_summary=_build_summary(directives, eff_solar, no_chg, no_dch),
+        solver_status=solver_status,
+        solve_time_ms=round(solve_time_ms, 2),
+        objective_value=round(objective_value, 4),
     )
+
+
+# ---------------------------------------------------------------------------
+# Carbon-aware optimizer
+# ---------------------------------------------------------------------------
+
+
+def optimize_carbon(
+    hours: list[HourEntry],
+    battery: BatterySpec,
+    directives: Sequence[DirectiveInterpretation],
+    scenario_id: str,
+    carbon_factor: float = 0.5,
+    cost_weight: float = 0.7,
+    carbon_weight: float = 0.3,
+) -> tuple[OptimizeResponse, float, float]:
+    """Multi-objective: minimise weighted sum of cost + carbon."""
+
+    eff_solar = _effective_solar(hours, directives)
+    no_chg = _no_charge_hours(directives)
+    no_dch = _no_discharge_hours(directives)
+    min_res = _min_reserve_map(directives, battery.minimum_energy_kwh)
+    max_grid = _max_grid_map(directives)
+
+    demand = [h.demand_kwh for h in hours]
+    tariff = [h.tariff_bdt_per_kwh for h in hours]
+
+    prob = pulp.LpProblem("GridWiseCarbon", pulp.LpMinimize)
+
+    grid = [pulp.LpVariable(f"grid_{h}", lowBound=0) for h in range(24)]
+    solar_used = [pulp.LpVariable(f"solar_{h}", lowBound=0) for h in range(24)]
+    charge = [pulp.LpVariable(f"charge_{h}", lowBound=0) for h in range(24)]
+    discharge = [pulp.LpVariable(f"discharge_{h}", lowBound=0) for h in range(24)]
+    energy = [pulp.LpVariable(f"energy_{h}", lowBound=0) for h in range(24)]
+    is_ch = [pulp.LpVariable(f"is_ch_{h}", cat="Binary") for h in range(24)]
+    is_dch = [pulp.LpVariable(f"is_dch_{h}", cat="Binary") for h in range(24)]
+
+    total_cost_expr = pulp.lpSum(grid[h] * tariff[h] for h in range(24))
+    total_carbon_expr = pulp.lpSum(grid[h] * carbon_factor for h in range(24))
+    prob += cost_weight * total_cost_expr + carbon_weight * total_carbon_expr
+
+    for h in range(24):
+        prob += grid[h] + solar_used[h] + discharge[h] == demand[h] + charge[h], f"balance_{h}"
+        prob += solar_used[h] <= eff_solar[h], f"solar_cap_{h}"
+        if h == 0:
+            prob += energy[h] == battery.initial_energy_kwh + charge[h] - discharge[h], f"state_{h}"
+        else:
+            prob += energy[h] == energy[h - 1] + charge[h] - discharge[h], f"state_{h}"
+        prob += energy[h] >= min_res[h], f"min_res_{h}"
+        prob += energy[h] <= battery.capacity_kwh, f"max_cap_{h}"
+        prob += charge[h] <= battery.max_charge_kwh_per_hour * is_ch[h], f"rate_ch_{h}"
+        prob += discharge[h] <= battery.max_discharge_kwh_per_hour * is_dch[h], f"rate_dch_{h}"
+        prob += is_ch[h] + is_dch[h] <= 1, f"mutex_{h}"
+        if h in no_chg:
+            prob += charge[h] == 0, f"no_charge_{h}"
+        if h in no_dch:
+            prob += discharge[h] == 0, f"no_discharge_{h}"
+        if h in max_grid:
+            prob += grid[h] <= max_grid[h], f"max_grid_{h}"
+
+    prob += energy[23] == battery.initial_energy_kwh, "eod_neutrality"
+
+    from .config import get_settings
+    solver_timeout = get_settings().optimizer_timeout
+    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=solver_timeout)
+    status = prob.solve(solver)
+
+    if pulp.LpStatus[status] != "Optimal":
+        raise RuntimeError(f"Optimizer status: {pulp.LpStatus[status]}")
+
+    from .models import BatteryAction, HourlyPlanEntry
+    hourly_plan: list[HourlyPlanEntry] = []
+    total_grid = 0.0
+    total_cost = 0.0
+    total_carbon = 0.0
+    peak_grid = 0.0
+
+    for h in range(24):
+        g_val = float(grid[h].varValue or 0)
+        s_val = float(solar_used[h].varValue or 0)
+        c_val = float(charge[h].varValue or 0)
+        d_val = float(discharge[h].varValue or 0)
+        e_val = float(energy[h].varValue or 0)
+
+        if c_val > 0.01:
+            action = BatteryAction.CHARGE
+            batt_kwh = c_val
+        elif d_val > 0.01:
+            action = BatteryAction.DISCHARGE
+            batt_kwh = d_val
+        else:
+            action = BatteryAction.IDLE
+            batt_kwh = 0.0
+
+        hourly_plan.append(HourlyPlanEntry(
+            hour=h, grid_kwh=round(g_val, 4), solar_used_kwh=round(s_val, 4),
+            battery_action=action, battery_kwh=round(batt_kwh, 4),
+            battery_energy_after_kwh=round(e_val, 4),
+        ))
+        total_grid += g_val
+        total_cost += g_val * tariff[h]
+        total_carbon += g_val * carbon_factor
+        peak_grid = max(peak_grid, g_val)
+
+    resp = OptimizeResponse(
+        scenario_id=scenario_id,
+        directive_interpretation=list(directives),
+        hourly_plan=hourly_plan,
+        total_grid_kwh=round(total_grid, 2),
+        total_cost_bdt=round(total_cost, 2),
+        peak_grid_kwh=round(peak_grid, 2),
+        plan_summary=_build_summary(directives, eff_solar, no_chg, no_dch),
+    )
+    return resp, round(total_carbon, 4), round(cost_weight * total_cost + carbon_weight * total_carbon * 100, 2)
+
+
+# ---------------------------------------------------------------------------
+# Summary builder
+# ---------------------------------------------------------------------------
 
 
 def _build_summary(

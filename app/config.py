@@ -12,6 +12,14 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
+def _parse_cors(origins_raw: str) -> list[str]:
+    """Parse a comma-separated CORS allowlist. '*' returns literal wildcard."""
+    origins_raw = origins_raw.strip()
+    if origins_raw == "" or origins_raw == "*":
+        return ["*"]
+    return [o.strip() for o in origins_raw.split(",") if o.strip()]
+
+
 @dataclass(frozen=True)
 class Settings:
     """Immutable application settings."""
@@ -19,6 +27,26 @@ class Settings:
     # Server
     host: str = field(default_factory=lambda: os.getenv("GRIDWISE_HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: int(os.getenv("GRIDWISE_PORT", "8000")))
+
+    # CORS — comma-separated allowlist. Use "*" for fully permissive (dev only).
+    cors_allow_origins: list[str] = field(
+        default_factory=lambda: _parse_cors(
+            os.getenv("GRIDWISE_CORS_ORIGINS", "*")
+        )
+    )
+    cors_allow_credentials: bool = field(
+        default_factory=lambda: os.getenv("GRIDWISE_CORS_CREDENTIALS", "false").lower()
+        in ("1", "true", "yes")
+    )
+
+    # Samples file location (overridable for local dev).
+    # Falls back to a bundled copy inside the package.
+    samples_file: str = field(
+        default_factory=lambda: os.getenv(
+            "GRIDWISE_SAMPLES_FILE",
+            str(Path(__file__).resolve().parent.parent / "samples" / "sample_cases.json"),
+        )
+    )
 
     # LLM provider (OpenAI-compatible API)
     llm_api_key: str = field(default_factory=lambda: os.getenv("LLM_API_KEY", ""))

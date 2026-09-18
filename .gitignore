@@ -33,3 +33,7 @@ htmlcov/
 
 # Docker
 docker-compose.override.yml
+.puku/
+data/
+__pycache__/
+*.pyc
